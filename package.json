@@ -1,0 +1,102 @@
+{
+  "name": "@kubohiroya/turbowarp-plus-editor-code-views",
+  "version": "0.1.0",
+  "description": "Code views for TurboWarp Plus Editor: code in tabs and windows, the detached block palette, script layout and block field editing",
+  "type": "module",
+  "license": "MPL-2.0",
+  "author": "Hiroya Kubo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kubohiroya/turbowarp-plus-editor-code-views.git"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./code-extensions": {
+      "types": "./dist/code-extensions.d.ts",
+      "default": "./dist/code-extensions.js"
+    },
+    "./procedure-editor": {
+      "types": "./dist/procedure-editor.d.ts",
+      "default": "./dist/procedure-editor.js"
+    },
+    "./variable-references": {
+      "types": "./dist/variable-references.d.ts",
+      "default": "./dist/variable-references.js"
+    },
+    "./target-combobox": {
+      "types": "./dist/target-combobox.d.ts",
+      "default": "./dist/target-combobox.js"
+    },
+    "./sprite-code-windows": {
+      "types": "./dist/sprite-code-windows.d.ts",
+      "default": "./dist/sprite-code-windows.js"
+    },
+    "./detached-block-palette": {
+      "types": "./dist/detached-block-palette.d.ts",
+      "default": "./dist/detached-block-palette.js"
+    },
+    "./palette-category-reorder": {
+      "types": "./dist/palette-category-reorder.d.ts",
+      "default": "./dist/palette-category-reorder.js"
+    },
+    "./palette-category-search": {
+      "types": "./dist/palette-category-search.d.ts",
+      "default": "./dist/palette-category-search.js"
+    },
+    "./palette-dropdown-resize": {
+      "types": "./dist/palette-dropdown-resize.d.ts",
+      "default": "./dist/palette-dropdown-resize.js"
+    },
+    "./block-argument-text": {
+      "types": "./dist/block-argument-text.d.ts",
+      "default": "./dist/block-argument-text.js"
+    },
+    "./script-layout": {
+      "types": "./dist/script-layout-view.d.ts",
+      "default": "./dist/script-layout-view.js"
+    },
+    "./asset-edit-session": {
+      "types": "./dist/asset-edit-session.d.ts",
+      "default": "./dist/asset-edit-session.js"
+    },
+    "./dockview-unsaved": {
+      "types": "./dist/dockview-unsaved.d.ts",
+      "default": "./dist/dockview-unsaved.js"
+    },
+    "./styles.css": "./src/styles.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "tsconfig.json",
+    "README.md",
+    "README.ja.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "test": "npm run build && node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@kubohiroya/turbowarp-script-transfer": "0.1.5"
+  },
+  "peerDependencies": {
+    "@kubohiroya/turbowarp-plus-editor-windows": ">=0.2.0 <0.3.0",
+    "react": ">=16.14",
+    "react-dom": ">=16.14"
+  },
+  "devDependencies": {
+    "@kubohiroya/turbowarp-plus-editor-windows": "0.2.0",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "jsdom": "26.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "6.0.3"
+  }
+}

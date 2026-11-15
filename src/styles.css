@@ -1,0 +1,595 @@
+/* The target picker. */
+
+.tw-target-combobox {
+    position: relative;
+    min-inline-size: 0;
+}
+
+.tw-target-combobox__field {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    inline-size: 10rem;
+    max-inline-size: 100%;
+    padding: 0.125rem 0.375rem;
+    border: 1px solid var(--ui-black-transparent, #d7dbe6);
+    border-radius: 0.5rem;
+    background: var(--input-background, #fff);
+    color: inherit;
+    font: inherit;
+    text-align: start;
+}
+
+.tw-target-combobox__field:focus-within {
+    outline: 2px solid var(--tw-window-control-focus, var(--looks-secondary, #3855b9));
+    outline-offset: 1px;
+}
+
+.tw-target-combobox__field input {
+    flex: 1;
+    min-inline-size: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    outline: none;
+}
+
+.tw-target-combobox__field button {
+    display: grid;
+    place-items: center;
+    padding: 0.25rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+}
+
+.tw-target-combobox__thumbnail {
+    flex: none;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    border-radius: 0.25rem;
+    object-fit: contain;
+    background: var(--ui-secondary, #f5f6fa);
+}
+
+.tw-target-combobox__options {
+    position: absolute;
+    inset-block-start: 100%;
+    inset-inline-start: 0;
+    box-sizing: border-box;
+    min-inline-size: 100%;
+    max-block-size: 14rem;
+    overflow: auto;
+    margin: 0.375rem 0 0;
+    padding: 0.25rem;
+    border: 1px solid var(--ui-black-transparent, #d7dbe6);
+    border-radius: 0.5rem;
+    background: var(--popover-background, #fff);
+    color: var(--text-primary, inherit);
+    box-shadow: 0 8px 24px #30364d24;
+    list-style: none;
+}
+
+.tw-target-combobox__options li {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.tw-target-combobox__options li:hover,
+.tw-target-combobox__highlight {
+    background: var(--ui-tertiary, #e9ecf5);
+}
+
+.tw-target-combobox__options [aria-selected="true"] {
+    font-weight: 600;
+}
+
+/* The detached block palette. */
+
+.tw-detached-palette {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    color: var(--text-primary, #243248);
+    background: var(--ui-primary, #f5f6f8);
+    font: 14px system-ui, sans-serif;
+}
+
+.tw-detached-palette__content {
+    min-height: 0;
+    display: grid;
+    grid-template: "categories blocks" minmax(0, 1fr) / auto minmax(0, 1fr);
+}
+
+.tw-detached-palette[data-palette-orientation="vertical"] .tw-detached-palette__content {
+    grid-template: "categories" auto "blocks" minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+.tw-detached-palette__categories,
+.tw-detached-palette__blocks {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    overflow: auto;
+    align-items: flex-start;
+}
+
+.tw-detached-palette__categories {
+    grid-area: categories;
+    flex-flow: column nowrap;
+    align-items: center;
+    background: var(--ui-secondary, #eceef4);
+}
+
+.tw-detached-palette__blocks {
+    grid-area: blocks;
+    flex-wrap: wrap;
+    align-content: flex-start;
+}
+
+.tw-detached-palette[data-palette-orientation="vertical"] .tw-detached-palette__categories {
+    flex-direction: row;
+    margin-right: calc(2rem + 12px);
+}
+
+.tw-detached-palette[data-palette-orientation="vertical"] .tw-detached-palette__blocks {
+    flex-flow: column nowrap;
+}
+
+.tw-detached-palette__categories button,
+.tw-detached-palette__blocks button {
+    flex: none;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    padding: 5px 8px;
+    cursor: pointer;
+}
+
+.tw-detached-palette__categories button {
+    display: grid;
+    place-items: center;
+    inline-size: 40px;
+    block-size: 40px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 50%;
+}
+
+.tw-detached-palette__categories button[aria-pressed="true"] {
+    border-color: currentColor;
+}
+
+.tw-detached-palette__categories button:focus-visible {
+    outline: 2px solid var(--looks-secondary, #4c72dd);
+    outline-offset: 2px;
+}
+
+.tw-detached-palette__category-icon {
+    display: grid;
+    place-items: center;
+    inline-size: 30px;
+    block-size: 30px;
+    border-radius: 50%;
+    color: var(--text-primary, #243248);
+    background: var(--ui-white, #fff) center / 22px 22px no-repeat;
+}
+
+.tw-detached-palette__category-icon svg {
+    inline-size: 18px;
+    block-size: 18px;
+}
+
+.tw-detached-palette__tooltip {
+    position: fixed;
+    z-index: 2;
+    transform: translateY(-50%);
+    max-inline-size: calc(100vw - 80px);
+    padding: 5px 8px;
+    border: 1px solid var(--ui-black-transparent, #d7dbe6);
+    border-radius: 5px;
+    color: var(--text-primary, #243248);
+    background: var(--ui-white, #fff);
+    overflow-wrap: anywhere;
+    pointer-events: none;
+}
+
+.tw-detached-palette[data-palette-orientation="vertical"] .tw-detached-palette__tooltip {
+    transform: none;
+}
+
+.tw-detached-palette__categories button[aria-pressed="true"],
+.tw-detached-palette__categories button:hover,
+.tw-detached-palette__blocks button:not(:disabled):hover {
+    background: var(--ui-black-transparent, #dce1ea);
+}
+
+.tw-detached-palette__blocks button svg {
+    display: block;
+}
+
+.tw-detached-palette__blocks button:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.tw-detached-palette .tw-detached-palette__layout-menu {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    --tw-plus-icon-menu-max-width: calc(100vw - 16px);
+}
+
+.tw-detached-palette__layout-menu [role="menu"] {
+    inset-inline-end: auto;
+    right: 0;
+}
+
+/* Reordering palette categories. */
+
+.tw-palette-category-reordering,
+.tw-palette-category-reordering [data-palette-reorder-source],
+.tw-palette-category-reordering [data-palette-reorder-target] {
+    cursor: grabbing;
+}
+
+.tw-palette-category-reordering [data-palette-reorder-source] {
+    opacity: 0.55;
+}
+
+.tw-palette-category-reordering [data-palette-reorder-target] {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+}
+
+.tw-palette-category-drag-preview {
+    position: fixed;
+    z-index: 1000;
+    box-sizing: border-box;
+    pointer-events: none;
+    opacity: 0.65;
+}
+
+/* Searching palette categories. */
+
+.tw-palette-category-search[type='search'] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 32;
+    box-sizing: border-box;
+    height: 28px;
+    padding-inline: 0.65rem;
+    border: 1px solid var(--ui-black-transparent, #c2c7d0);
+    border-radius: 999px;
+    background: var(--input-background, white);
+    color: var(--text-primary, #575e75);
+    font: inherit;
+    font-size: 0.8125rem;
+}
+
+/* Resizing palette dropdowns. */
+
+.tw-palette-dropdown-resize-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 32;
+    cursor: nwse-resize;
+    touch-action: none;
+}
+
+.tw-palette-dropdown-resize-handle::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 10px;
+    height: 10px;
+    background: linear-gradient(135deg, transparent 51%, #68778c 51% 61%, transparent 61% 72%, #68778c 72% 82%, transparent 82%);
+}
+
+/* Long text arguments. */
+
+.twPlusArgumentTextDialog {
+    box-sizing: border-box;
+    width: min(36rem, calc(100% - 2rem));
+    max-width: none;
+    padding: 1rem;
+    border: 0;
+    border-radius: 0.75rem;
+    background: Canvas;
+    color: CanvasText;
+}
+.twPlusArgumentTextDialog::backdrop {
+    background: #17212a80;
+}
+.twPlusArgumentTextDialog h2 {
+    margin-top: 0;
+    font-size: 1.1rem;
+}
+.twPlusArgumentTextDialog textarea {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    min-height: 10rem;
+    max-height: 60vh;
+    padding: 0.5rem;
+    resize: vertical;
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* The function editor. */
+
+.twPlusProcedureDialog {
+    position: fixed;
+    inset: 0;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+    background: transparent;
+}
+.twPlusProcedureDialog::backdrop {
+    background: #17212a80;
+}
+.twPlusProcedureDialog > form {
+    box-sizing: border-box;
+    max-width: min(38rem, calc(100% - 2rem));
+    margin: min(12vh, 4rem) auto 0;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    background: Canvas;
+    color: CanvasText;
+}
+.twPlusProcedureDialog h2 {
+    margin-top: 0;
+}
+.twPlusProcedureDialog [data-procedure-workspace] {
+    position: relative;
+    height: 7rem;
+    border: 1px solid GrayText;
+}
+.twPlusProcedureDialog [data-procedure-buttons],
+.twPlusProcedureDialog footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-block: 0.75rem;
+}
+.twPlusProcedureDialog footer {
+    justify-content: flex-end;
+}
+
+/* Code previews. */
+
+[data-code-preview] {
+    position: relative;
+    inline-size: 100%;
+    block-size: 100%;
+    overflow: hidden;
+}
+
+[data-code-preview] > div:first-child,
+[data-code-preview] > .tw-code-preview-chrome {
+    inline-size: 100%;
+    block-size: 100%;
+    pointer-events: none;
+}
+
+[data-code-preview] > .tw-code-preview-chrome {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+[data-dockview-costume-thumbnail] {
+    position: absolute;
+    inset: auto var(--plus-watermark-right, 12px) var(--plus-watermark-bottom, 12px) auto;
+    pointer-events: none;
+}
+
+[data-dockview-costume-thumbnail] > img[src] {
+    display: block;
+    max-width: var(--plus-watermark-size, 64px);
+    max-height: var(--plus-watermark-size, 64px);
+    opacity: 0.6;
+}
+
+:has(> [data-dockview-costume-thumbnail]) > [data-code-watermark] {
+    display: none;
+}
+
+/* Keep Blockly's measurements and viewport while another Dockview group is selected. */
+.dv-inactive-group .tw-plus-sprite-tab-slot--split .blocklyZoom,
+.dv-inactive-group .tw-plus-sprite-tab-slot--split .blocklyToolboxDiv,
+.dv-inactive-group .tw-plus-sprite-tab-slot--split .blocklyFlyout,
+.dv-inactive-group .tw-plus-sprite-tab-slot--split .blocklyFlyoutScrollbar,
+.dv-inactive-group .tw-plus-sprite-tab-slot--split [data-code-extension-button] {
+    visibility: hidden;
+    clip-path: inset(50%);
+}
+
+/* Script layout and script views. */
+
+[data-code-hover-surface]:not(:hover) :is(
+    .blocklyZoom, [data-workspace-minimap], [data-dockview-costume-thumbnail],
+    [data-code-hover-thumbnail], [data-code-watermark]
+) {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+/* A function editor shows its palette only while the pointer is over it, or while typing in its search. */
+[data-hover-palette]:not(:hover, :focus-within) .injectionDiv > :is(
+    .blocklyToolboxDiv, .blocklyFlyout, .blocklyFlyoutScrollbar,
+    .tw-palette-category-search, .tw-palette-dropdown-resize-handle
+) {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.tw-script-view-menu-arrow {
+    display: inline-block;
+    inline-size: 0.4em;
+    block-size: 0.4em;
+    margin-inline-start: 1em;
+    border-top: 1px solid;
+    border-right: 1px solid;
+    transform: rotate(45deg);
+    vertical-align: 0.12em;
+}
+
+.tw-script-view-menu-arrow:dir(rtl) {
+    transform: rotate(-135deg);
+}
+
+.blocklyWidgetDiv .tw-script-view-submenu {
+    position: fixed;
+    max-inline-size: 100vw;
+    max-block-size: 100vh;
+}
+
+.tw-script-view-surface {
+    position: absolute;
+    z-index: 1;
+    inset: var(--tw-script-view-top, 0px)
+        max(var(--tw-script-view-right, 0px), var(--plus-stage-overlap, 0px)) 0
+        var(--tw-script-view-left, 0px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: var(--ui-primary, Canvas);
+}
+
+.tw-script-view-surface > div {
+    min-height: 100%;
+}
+
+.tw-script-view-surface[hidden] {
+    display: none;
+}
+
+.blocklySvg[data-script-serial] {
+    z-index: 2;
+    background: transparent;
+    pointer-events: none;
+}
+
+.blocklySvg[data-script-serial] :is(.blocklyMainBackground, .blocklyBlockCanvas, .blocklyBubbleCanvas) {
+    visibility: hidden;
+}
+
+.blocklySvg[data-script-serial] .blocklyZoom {
+    pointer-events: visiblePainted;
+}
+
+[data-code-hover-surface]:not(:hover) .blocklySvg[data-script-serial] .blocklyZoom {
+    pointer-events: none;
+}
+
+.injectionDiv:has(> [data-script-serial]) > [data-workspace-minimap] {
+    z-index: 3;
+}
+
+.tw-script-layout-svg {
+    display: block;
+    overflow: visible;
+}
+
+.tw-script-view-surface[data-can-show-block] [data-script-view-block] {
+    cursor: pointer;
+}
+
+.tw-script-layout-dialog {
+    box-sizing: border-box;
+    width: min(44rem, calc(100% - 2rem));
+    max-height: calc(100% - 2rem);
+    padding: 1.25rem;
+    border: 1px solid var(--ui-black-transparent, #80808070);
+    border-radius: 0.75rem;
+    background: var(--ui-primary, Canvas);
+    color: var(--text-primary, CanvasText);
+    font: 0.9rem/1.4 system-ui, sans-serif;
+}
+
+.tw-script-layout-dialog::backdrop {
+    background: #17212a80;
+}
+
+.tw-script-layout-dialog > h2 {
+    margin: 0 0 1rem;
+    font-size: 1.1rem;
+}
+
+.tw-script-layout-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.tw-script-layout-options label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tw-script-layout-options select,
+.tw-script-layout-dialog button {
+    padding: 0.35rem 0.55rem;
+    border: 1px solid var(--ui-black-transparent, #80808070);
+    border-radius: 0.35rem;
+    background: var(--ui-primary, Canvas);
+    color: inherit;
+    font: inherit;
+}
+
+.tw-script-layout-preview {
+    height: min(45vh, 22rem);
+    overflow: auto;
+    border: 1px solid var(--ui-black-transparent, #80808070);
+    border-radius: 0.45rem;
+    background: color-mix(in srgb, var(--ui-primary, Canvas) 94%, currentColor);
+}
+
+.tw-script-layout-dialog > footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.tw-script-layout-dialog [role="status"] {
+    flex: 1;
+    margin: 0;
+}
+
+.tw-script-layout-dialog button:last-child:not(:disabled) {
+    background: var(--looks-secondary, #7951d1);
+    color: white;
+}
+
+/* Scripts the one-script mode leaves out, and the body of a folded script. ScratchBlocks sets the display of
+   every script as it scrolls in and out of view, so the hiding must win over its inline style. */
+[data-tw-plus-hidden] {
+    display: none !important;
+}
