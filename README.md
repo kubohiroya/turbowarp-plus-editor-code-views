@@ -20,6 +20,7 @@ The code views of TurboWarp Plus Editor: code in tabs and windows that share one
 | `./palette-category-reorder`, `./palette-category-search`, `./palette-dropdown-resize` | Reordering and searching palette categories, and resizing palette dropdowns |
 | `./block-argument-text` | Shortens long text arguments and edits them in a dialog |
 | `./block-number-input` | Converts full-width digits and signs typed into number arguments to half-width |
+| `./clean-up-comments` | Keeps comments with their scripts in "Clean up blocks": block comments keep their offset from the block, scripts with their comments do not cover one another, and workspace comments that cover a script move beside the scripts (`installCleanUpComments(ScratchBlocks)`) |
 | `./asset-edit-session`, `./dockview-unsaved` | The asset edit session and the unsaved marks on Dockview tabs, which the host connects to the GUI's editors and layout |
 | `./styles.css` | The stylesheet for all of the above |
 
