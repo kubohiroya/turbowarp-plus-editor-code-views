@@ -790,3 +790,11 @@
     margin: 0.25rem 0;
     background: var(--ui-black-transparent, #80808040);
 }
+
+.tw-palette-visibility-dont-ask {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: auto;
+    font-size: 0.85rem;
+}
