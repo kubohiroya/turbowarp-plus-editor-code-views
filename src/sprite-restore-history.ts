@@ -54,14 +54,22 @@ export function attachSpriteRestoreHistory({store, vm, limit = spriteRestoreLimi
         const previous = last;
         last = current;
         if (current.restoreFun) {
-            if (current.deletedItem === sprite && !stack.includes(current.restoreFun)) {
-                stack.push(current.restoreFun);
-                if (stack.length > Math.max(1, limit)) stack.splice(0, stack.length - Math.max(1, limit));
+            if (current.deletedItem !== sprite) return;
+            const index = stack.indexOf(current.restoreFun);
+            if (index >= 0) {
+                // A restore function already kept came back to the slot: TurboWarp's delete
+                // confirmation puts the slot back as it was when the user cancels. The ones kept
+                // after it belong to deletions that did not happen.
+                stack.splice(index + 1);
+                return;
             }
+            stack.push(current.restoreFun);
+            if (stack.length > Math.max(1, limit)) stack.splice(0, stack.length - Math.max(1, limit));
             return;
         }
         // The menu restored what the slot held and cleared it.
-        if (previous.restoreFun && previous.restoreFun === stack.at(-1)) stack.pop();
+        const used = previous.restoreFun ? stack.indexOf(previous.restoreFun) : -1;
+        if (used >= 0) stack.splice(used, 1);
         const next = stack.at(-1);
         if (next) store.dispatch({type: RESTORE_UPDATE, state: {restoreFun: next, deletedItem: sprite}});
     };

@@ -96,3 +96,21 @@ test('disposing stops the history and leaves the GUI with its single slot', () =
     while (restore());
     assert.deepEqual(restored, ['Dog']);
 });
+
+// TurboWarp's delete-confirmation addon: when the user answers No, the target pane still puts a
+// restore function for the sprite it did not delete in the slot, and the addon then puts the slot
+// back as it was. The cancelled one must never be offered, and the one put back is restored once.
+test('a deletion cancelled in the confirmation is dropped, and each sprite is restored once', () => {
+    const {store, deleteSprite, restore, restored, slot} = createStore();
+    attachSpriteRestoreHistory({store});
+    deleteSprite('Cat');
+    deleteSprite('Dog');
+    const before = {...slot()};
+    deleteSprite('Fish'); // cancelled: Fish was not deleted
+    store.dispatch({type: RESTORE_UPDATE, state: before});
+    assert.ok(restore());
+    assert.ok(restore());
+    assert.equal(restore(), false);
+    assert.deepEqual(restored, ['Dog', 'Cat']);
+    assert.deepEqual(slot(), {restoreFun: null, deletedItem: ''});
+});
