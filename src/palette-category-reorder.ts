@@ -9,6 +9,11 @@ export interface PaletteCategoryReorderOptions {
     horizontal?(): boolean;
     /** The element an item takes up, which a drop over it lands on. By default, the row that holds the item. */
     area?(item: HTMLElement): Element;
+    /**
+     * Whether a drop before the first item or after the last one lands at that end. On by default; off, a drop
+     * anywhere but over an item moves nothing, as when the items share the menu with others.
+     */
+    ends?: boolean;
 }
 
 /**
@@ -54,7 +59,7 @@ export function attachPaletteCategoryReorder(
         const hit = doc.elementFromPoint(event.clientX, event.clientY);
         if (!items.length || !menu.contains(hit)) return;
         const item = items.find(candidate => area(candidate).contains(hit));
-        if (item) return item;
+        if (item || options.ends === false) return item;
 
         const first = items[0];
         const last = items[items.length - 1];
