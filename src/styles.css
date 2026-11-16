@@ -766,6 +766,12 @@
     gap: 0.35rem;
 }
 
+/* A group name may hold line breaks, in the palette's category menu and in the settings screen. */
+.scratchCategoryMenuItemLabel,
+.tw-palette-visibility-extension-groups label {
+    white-space: pre-line;
+}
+
 /* The groups one extension declares, chosen one by one inside its row. */
 .tw-palette-visibility-extension-groups {
     display: grid;

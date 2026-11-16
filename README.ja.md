@@ -91,6 +91,7 @@ getInfo() {
 ```
 
 - 各グループはパレットのカテゴリ `shapes/geometry` になり、名前はグループの名前になる。設定もこの ID で記録する。`paletteGroup` のないブロック（宣言していないグループを指すものを含む）は、カテゴリ `shapes` に残る。
+- グループの `id` は設定に記録する名前で、言語によって変わらない。`name` は利用者が読む表示名で、1つの文字列か、`{en: 'Speech\nand text', ja: 'セリフと\n文字'}` のような言語ごとの文字列を書く。エディターは、その言語の名前、同じ言語の名前、英語、最初の名前の順に選ぶ。`\n` は、カテゴリの一覧と設定の画面で改行になる（`resolveGroupName(name, locale)`。`extensionPaletteCatalog` に言語を渡す）。
 - グループの `color1`・`color2`・`color3`・`menuIconURI` は省略でき、省略すると機能拡張のものを使う。ブロック自身の色はグループの色より優先する。
 - 見出し・区切り・ボタンは、その次のブロックと同じグループに入る。オペコードは `shapes_circle` などのまま変わらないので、SB3 は変わらない。標準の TurboWarp と Scratch は `groups` と `paletteGroup` を無視し、1つのカテゴリとして表示する。
 - ホストは、機能拡張を読み込む前に `installExtensionPaletteGroups(vm.runtime)` を呼び、`extensionPaletteCatalog(vm.runtime._blockInfo)` をストア、`filterToolboxTree`、`usedGroups` に渡す。設定の画面には、そのような機能拡張の項目の `groups` としてグループを渡す。画面は機能拡張の行の中に、グループごとのチェックを出す。
