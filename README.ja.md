@@ -18,9 +18,12 @@ TurboWarp Plus Editor のコードの画面。1つの作品と1つの取り消�
 | `./detached-block-palette` | 別窓のブロックパレット |
 | `./palette-category-reorder`・`./palette-category-search`・`./palette-dropdown-resize` | パレットのカテゴリの並べ替えと検索、パレットのドロップダウンの大きさの変更 |
 | `./palette-category-visibility`・`./palette-visibility-dialog` | スプライト・背景ごとに、パレットに出すブロックグループを選ぶ。設定はエディターの画面状態として保存し、選ぶ画面を持つ |
-| `./block-argument-text` | 長いテキストの引数を短く表示し、ダイアログで編集する |
+| `./block-argument-text` | 長いテキストの引数を短く表示し、ダイアログで編集する。テキストの引数で Shift+Enter を押すと、改行を入れてダイアログで編集を続ける |
 | `./block-number-input` | 数値の引数に入力した全角の数字・記号を半角にする |
 | `./clean-up-comments` | 「きれいにする」でコメントをスクリプトについて動かす。ブロックのコメントはブロックとの相対位置を保ち、コメントを含めたスクリプト同士が重ならないようにし、スクリプトに重なるワークスペースのコメントはスクリプトの横へ移す（`installCleanUpComments(ScratchBlocks)`） |
+| `./target-undo-history` | コードエリアの元に戻す・やり直しの履歴を、スプライト・ステージごとに保ち、切り替えて戻ったときに返す（`attachTargetUndoHistory({vm, getBlockly})`）。履歴を返すのは、離れたときからその対象のコードが変わっていない場合に限る |
+| `./sprite-restore-history` | 「編集 → スプライトの復元」で、直前の1件だけでなく、削除した最近の10件まで順に戻せるようにする（`attachSpriteRestoreHistory({store, vm})`、GUI の Redux ストアを渡す） |
+| `./sprite-copy-notice` | `attachSpriteCopyNotice`。スプライト一覧の上で離したスクリプトがスプライトや背景にコピーされたとき、そのタイルに印を付け、コピー先を示す通知を出す。通知の「元に戻す」でコピーを取り除く |
 | `./asset-edit-session`・`./dockview-unsaved` | 素材の編集のセッションと、Dockview のタブの未保存の印。ホストが GUI のエディターとレイアウトにつなぐ |
 | `./styles.css` | 上のすべてのスタイルシート |
 
@@ -63,7 +66,7 @@ MPL-2.0。turbowarp-plus-editor の `packages/editor-views` と `packages/editor
 | `paletteGroupSets(locale, projectSets)` | 「標準」「表現」「変数・リスト」「基本の制御」と、作品のセット |
 | `attachPaletteMenuButton(menu, getLocale, getItems)` | カテゴリの一覧の末尾（横配置では右端、縦配置では下端）に ▼ のボタンを置く。押すと、ホストが渡す項目のメニューを出す。項目は「ブロックグループの表示・非表示の設定」（`paletteVisibilityMenuLabel`）と、ホストの機能拡張に関する項目 |
 
-`./palette-visibility-dialog` の `openPaletteVisibilityDialog(document, props)` は「パレット内のブロックグループの表示・非表示の設定」の画面を開く。機能拡張の各行は `@kubohiroya/turbowarp-extension-security-dialog/react` の `ExtensionRow` で描くので、拡張の追加の画面と同じ見た目になる。適用すると、出すグループと、この画面で足したセットを `onApply` に渡す。
+`./palette-visibility-dialog` の `openPaletteVisibilityDialog(document, props)` は「パレット内のブロックグループの表示・非表示の設定」の画面を開く。機能拡張の各行は `@kubohiroya/turbowarp-extension-security-dialog/react` の `ExtensionRow` で描くので、拡張の追加の画面と同じ見た目になる。適用すると、出すグループと、この画面で足したセットを `onApply` に渡す。`newSprite` を渡すと、追加したばかりのスプライトについて尋ねる画面になり、「新しいスプライト「名前」」と「次回から尋ねない」のチェックを出す。チェックの値は `onApply` の `dontAskAgain` になる。
 
 ホストは `@kubohiroya/turbowarp-extension-security-dialog`（0.9.0 以上）を入れ、その `styles.css` も読み込む。設定を画面状態のスライスとして登録するのはホストの役目である。1つの機能拡張の中を複数のグループに分けて選ぶ機能は、VM がグループごとのカテゴリを作れるようになってから足す。
 

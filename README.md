@@ -18,9 +18,12 @@ The code views of TurboWarp Plus Editor: code in tabs and windows that share one
 | `./detached-block-palette` | The block palette in its own window |
 | `./palette-category-visibility`, `./palette-visibility-dialog` | Choose which block groups the palette shows for each sprite and the stage. The setting is saved with the editor's screen state, with a screen to choose |
 | `./palette-category-reorder`, `./palette-category-search`, `./palette-dropdown-resize` | Reordering and searching palette categories, and resizing palette dropdowns |
-| `./block-argument-text` | Shortens long text arguments and edits them in a dialog |
+| `./block-argument-text` | Shortens long text arguments and edits them in a dialog. Shift+Enter in a text argument continues in the dialog with a line break |
 | `./block-number-input` | Converts full-width digits and signs typed into number arguments to half-width |
 | `./clean-up-comments` | Keeps comments with their scripts in "Clean up blocks": block comments keep their offset from the block, scripts with their comments do not cover one another, and workspace comments that cover a script move beside the scripts (`installCleanUpComments(ScratchBlocks)`) |
+| `./target-undo-history` | Keeps the code area's undo and redo history for each sprite and the stage across target switches (`attachTargetUndoHistory({vm, getBlockly})`). A history comes back only while the target's code is unchanged since it was put aside |
+| `./sprite-restore-history` | Lets Edit → Restore Sprite go back through the last 10 deleted sprites, not only the last one (`attachSpriteRestoreHistory({store, vm})`, with the GUI's Redux store) |
+| `./sprite-copy-notice` | `attachSpriteCopyNotice`: when a script dropped on the sprite list is copied into a sprite or the stage, marks its tile and shows a notice naming it, with Undo to remove the copy |
 | `./asset-edit-session`, `./dockview-unsaved` | The asset edit session and the unsaved marks on Dockview tabs, which the host connects to the GUI's editors and layout |
 | `./styles.css` | The stylesheet for all of the above |
 
@@ -63,7 +66,7 @@ Each sprite and the stage can choose which block groups the palette shows: the s
 | `paletteGroupSets(locale, projectSets)` | Standard, Expression, Variables and lists, Basic control, and the project's own sets |
 | `attachPaletteMenuButton(menu, getLocale, getItems)` | Puts a ▼ button at the end of the category menu (the right end of a horizontal palette, the bottom of a vertical one). Pressing it lists the items the host gives: the group settings (`paletteVisibilityMenuLabel`) and the host's extension items |
 
-`openPaletteVisibilityDialog(document, props)` from `./palette-visibility-dialog` opens the screen that chooses the groups. Each extension is drawn with `ExtensionRow` from `@kubohiroya/turbowarp-extension-security-dialog/react`, so it looks the same as in the screen that adds extensions. Applying passes the groups to show, and the sets added in the screen, to `onApply`.
+`openPaletteVisibilityDialog(document, props)` from `./palette-visibility-dialog` opens the screen that chooses the groups. Each extension is drawn with `ExtensionRow` from `@kubohiroya/turbowarp-extension-security-dialog/react`, so it looks the same as in the screen that adds extensions. Applying passes the groups to show, and the sets added in the screen, to `onApply`. With `newSprite`, the screen asks about a sprite just added: it names it as a new sprite and offers “Don’t ask next time”, whose value `onApply` receives as `dontAskAgain`.
 
 The host installs `@kubohiroya/turbowarp-extension-security-dialog` (0.9.0 or later) and loads its `styles.css`, and registers the store as a screen-state slice. Choosing groups inside one extension comes once the VM can make a category per group.
 
