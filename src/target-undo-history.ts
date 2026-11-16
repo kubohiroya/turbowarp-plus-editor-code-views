@@ -133,7 +133,7 @@ export function attachTargetUndoHistory({vm, getBlockly, onError = error => cons
     let installed: {dispose(): void} | undefined;
     const ready = Promise.resolve().then(getBlockly).then(ScratchBlocks => {
         if (!disposed) installed = installTargetUndoHistory(vm, ScratchBlocks);
-    }, onError);
+    }).catch(onError);
     return {
         ready,
         dispose() {
