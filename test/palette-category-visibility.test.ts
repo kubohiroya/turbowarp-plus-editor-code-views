@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
 import {attachPaletteMenuButton, createPaletteVisibilityStore, defaultVisibleGroups, extensionPaletteCatalog, filterToolboxTree, groupOfOpcode,
-    installExtensionPaletteGroups, paletteGroupSets, paletteVisibilityMenuLabel, standardGroups, usedGroups} from '../dist/palette-category-visibility.js';
+    installExtensionPaletteGroups, paletteGroupSets, resolveGroupName, paletteVisibilityMenuLabel, standardGroups, usedGroups} from '../dist/palette-category-visibility.js';
 
 function target(name, {isStage = false, opcodes = [], id = name} = {}) {
     const blocks = Object.fromEntries(opcodes.map((opcode, index) => [`b${index}`, {opcode, shadow: opcode.endsWith('_menu')}]));
@@ -150,6 +150,31 @@ test('an extension that declares groups offers each of them, and its unmarked bl
     remove();
     assert.equal(Object.hasOwn(runtime, '_fillExtensionCategory'), true);
     assert.equal(installExtensionPaletteGroups({})(), undefined, 'a VM without the method is left alone');
+});
+
+test('a group name can be given per locale and hold line breaks', () => {
+    const names = {en: 'Speech\nand text', ja: 'セリフと\n文字', 'zh-cn': '对白'};
+    assert.equal(resolveGroupName(names, 'ja'), 'セリフと\n文字');
+    assert.equal(resolveGroupName(names, 'ja-Hira'), 'セリフと\n文字', 'a regional locale falls back to its language');
+    assert.equal(resolveGroupName(names, 'zh-CN'), '对白');
+    assert.equal(resolveGroupName(names, 'zh-tw'), '对白', 'another region of the same language');
+    assert.equal(resolveGroupName(names, 'fr'), 'Speech\nand text', 'English when the locale has no name');
+    assert.equal(resolveGroupName({ja: 'だけ'}, 'fr'), 'だけ', 'the first name when there is no English');
+    assert.equal(resolveGroupName('Plain', 'ja'), 'Plain');
+    const runtime = {
+        _fillExtensionCategory(categoryInfo, extensionInfo) {
+            categoryInfo.blocks = extensionInfo.blocks.map(info => ({info, json: {type: `talk_${info.opcode}`}}));
+        }
+    };
+    installExtensionPaletteGroups(runtime);
+    const categoryInfo = {id: 'talk', name: 'Talk'};
+    runtime._fillExtensionCategory(categoryInfo, {
+        groups: [{id: 'speech', name: names}, {id: 'empty', name: {ja: ''}}, {id: 'odd', name: 3}],
+        blocks: [{opcode: 'say', paletteGroup: 'speech'}, {opcode: 'a', paletteGroup: 'empty'}, {opcode: 'b', paletteGroup: 'odd'}]
+    });
+    const named = locale => extensionPaletteCatalog([categoryInfo], locale).groups.map(group => group.name);
+    assert.deepEqual(named('ja'), ['セリフと\n文字', 'empty', 'odd'], 'a group without a usable name shows its ID');
+    assert.deepEqual(named('en'), ['Speech\nand text', 'empty', 'odd']);
 });
 
 test('the toolbox splits an extension into its groups before it keeps the shown ones', () => {

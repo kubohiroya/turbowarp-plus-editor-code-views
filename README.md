@@ -92,6 +92,7 @@ getInfo() {
 ```
 
 - Each group is the palette category `shapes/geometry`, named after the group, and the settings name it by that ID. Blocks without `paletteGroup` (or naming a group not declared) stay in the category `shapes`.
+- A group's `id` names it in the settings and stays the same in every language; its `name` is what people read. `name` is one text or one per locale, such as `{en: 'Speech\nand text', ja: 'セリフと\n文字'}`: the editor shows the one for its locale, then for its language, then English, then the first. A `\n` starts a new line in the category menu and the settings screen (`resolveGroupName(name, locale)`; pass the locale to `extensionPaletteCatalog`).
 - `color1`, `color2`, `color3` and `menuIconURI` of a group are optional, and default to the extension's. A block's own colour wins over its group's.
 - A label, separator or button goes with the block after it. The opcodes stay `shapes_circle` and so on, so the SB3 does not change: standard TurboWarp and Scratch ignore `groups` and `paletteGroup` and show one category.
 - The host calls `installExtensionPaletteGroups(vm.runtime)` before extensions load, and passes `extensionPaletteCatalog(vm.runtime._blockInfo)` to the store, `filterToolboxTree` and `usedGroups`. The dialog takes the groups of such an extension as `groups` of its entry and shows a checkbox for each inside the extension's row.

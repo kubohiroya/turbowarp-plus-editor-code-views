@@ -79,7 +79,7 @@ export interface PaletteGroupCatalog {
 /** A declared group as kept on the VM's category info. */
 interface DeclaredGroup {
     id: string;
-    name: string;
+    name: GroupName;
     color1?: string;
     color2?: string;
     color3?: string;
@@ -98,6 +98,33 @@ export interface PaletteCategoryInfo {
     blocks?: readonly {info?: {paletteGroup?: unknown}; json?: {type?: unknown} | null}[];
 }
 
+/**
+ * A group's display name: one text, or one per locale such as `{en: 'Speech', ja: 'セリフ'}`. A line break (`\n`)
+ * starts a new line in the palette and the settings screen.
+ */
+export type GroupName = string | Readonly<Record<string, string>>;
+
+/** The name to show in `locale`: that locale, then its language, then English, then the first one given. */
+export function resolveGroupName(name: GroupName, locale?: string): string {
+    if (typeof name === 'string') return name;
+    const entries = Object.entries(name);
+    const wanted = (locale ?? '').toLowerCase();
+    const language = wanted.split(/[-_]/)[0];
+    return entries.find(([key]) => key.toLowerCase() === wanted)?.[1] ??
+        entries.find(([key]) => key.toLowerCase() === language)?.[1] ??
+        entries.find(([key]) => key.toLowerCase().split(/[-_]/)[0] === language && language)?.[1] ??
+        entries.find(([key]) => key.toLowerCase() === 'en')?.[1] ?? entries[0]?.[1] ?? '';
+}
+
+/** A name as `getInfo()` gives it, or nothing when it is neither a text nor texts by locale. */
+function groupName(value: unknown): GroupName | undefined {
+    if (typeof value === 'string') return value || undefined;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const names = Object.fromEntries(Object.entries(value as Record<string, unknown>)
+        .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== ''));
+    return Object.keys(names).length ? names : undefined;
+}
+
 const groupIdPattern = /^[A-Za-z0-9_-]+$/;
 const optionalString = (value: unknown) => typeof value === 'string' && value ? value : undefined;
 /** The groups `getInfo()` declares, leaving out any that are not well formed or repeat an ID. */
@@ -109,7 +136,7 @@ function declaredGroups(value: unknown): DeclaredGroup[] {
         const {id, name} = item as Record<string, unknown>;
         if (typeof id !== 'string' || !groupIdPattern.test(id) || groups.some(group => group.id === id)) continue;
         const entry = item as Record<string, unknown>;
-        groups.push({id, name: typeof name === 'string' && name ? name : id, color1: optionalString(entry.color1),
+        groups.push({id, name: groupName(name) ?? id, color1: optionalString(entry.color1),
             color2: optionalString(entry.color2), color3: optionalString(entry.color3),
             menuIconURI: optionalString(entry.menuIconURI)});
     }
@@ -145,8 +172,8 @@ export function installExtensionPaletteGroups(runtime: {_fillExtensionCategory?:
     };
 }
 
-/** The groups of the loaded extensions, in palette order, from the VM's category info. */
-export function extensionPaletteCatalog(categories: readonly PaletteCategoryInfo[] = []): PaletteGroupCatalog {
+/** The groups of the loaded extensions, in palette order, from the VM's category info, named in `locale`. */
+export function extensionPaletteCatalog(categories: readonly PaletteCategoryInfo[] = [], locale?: string): PaletteGroupCatalog {
     const groups: ExtensionPaletteGroup[] = [];
     const groupOf = new Map<string, string>();
     for (const category of categories) {
@@ -172,7 +199,7 @@ export function extensionPaletteCatalog(categories: readonly PaletteCategoryInfo
         }
         for (const group of declared) {
             if (!used.has(group.id)) continue;
-            groups.push({id: `${category.id}/${group.id}`, extensionId: category.id, name: group.name, extensionName,
+            groups.push({id: `${category.id}/${group.id}`, extensionId: category.id, name: resolveGroupName(group.name, locale), extensionName,
                 declared: true, color1: group.color1 ?? category.color1, color2: group.color2 ?? category.color2,
                 menuIconURI: group.menuIconURI ?? menuIconURI});
         }
