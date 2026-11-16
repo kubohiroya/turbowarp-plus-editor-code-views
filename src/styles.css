@@ -759,10 +759,19 @@
     gap: 0.35rem 0.75rem;
 }
 
-.tw-palette-visibility-standard label {
+.tw-palette-visibility-standard label,
+.tw-palette-visibility-extension-groups label {
     display: flex;
     align-items: center;
     gap: 0.35rem;
+}
+
+/* The groups one extension declares, chosen one by one inside its row. */
+.tw-palette-visibility-extension-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 0.25rem 0.75rem;
+    margin-top: 0.4rem;
 }
 
 .tw-palette-visibility-used {
@@ -957,14 +966,17 @@
 }
 
 /* A group under the pointer, and the groups a shortcut or copy source under the pointer would choose. */
-.tw-palette-visibility-standard label {
+.tw-palette-visibility-standard label,
+.tw-palette-visibility-extension-groups label {
     padding: 0.15rem 0.3rem;
     border-radius: 0.3rem;
 }
 
 .tw-palette-visibility-standard label:hover,
 .tw-palette-visibility-standard label[data-highlighted],
-.tw-palette-visibility .twextsec-row:hover,
+.tw-palette-visibility-extension-groups label:hover,
+.tw-palette-visibility-extension-groups label[data-highlighted],
+.tw-palette-visibility .twextsec-row:not([data-extension]):hover,
 .tw-palette-visibility .twextsec-row[data-highlighted] {
     background: color-mix(in srgb, var(--looks-secondary, #7951d1) 16%, transparent);
 }

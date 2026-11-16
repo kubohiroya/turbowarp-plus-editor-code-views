@@ -199,3 +199,22 @@ test('while a copy source is chosen, the groups it would choose stay marked', ()
     assert.deepEqual(marked(), []);
     view.close();
 });
+
+test('an extension that declares groups offers each of them inside its row', () => {
+    const view = open({
+        initial: new Set(['looks', 'shapes/geometry']),
+        used: new Map([['shapes/text', 3]]),
+        extensions: [{id: 'shapes', metadata: {name: 'Shapes'}, groups: [
+            {id: 'shapes', name: 'Shapes'}, {id: 'shapes/geometry', name: '図形', color: '#ff0000'}, {id: 'shapes/text', name: '文字'}
+        ]}]
+    });
+    const row = view.dialog.querySelector('[data-extension="shapes"]');
+    assert.deepEqual([...row.querySelectorAll('[data-group]')].map(label => label.textContent),
+        ['●そのほかのブロック', '●図形', '●文字使用中 3']);
+    assert.equal(row.querySelector('.twextsec-head input'), null, 'the extension itself has no checkbox');
+    assert.equal(view.group('shapes/geometry').checked, true);
+    view.click(view.group('shapes/text'));
+    view.click(view.group('shapes/geometry'));
+    view.click(view.button('確定'));
+    assert.deepEqual(view.choice.groups, ['looks', 'shapes/text']);
+});

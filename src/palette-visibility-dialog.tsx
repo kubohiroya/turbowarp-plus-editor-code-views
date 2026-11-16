@@ -9,6 +9,11 @@ export interface PaletteExtension {
     id: string;
     /** What the host knows about the extension; at least its name. */
     metadata: ExtensionMetadata;
+    /**
+     * The groups the extension declares, each chosen on its own, in place of the extension. A group whose ID is the
+     * extension's holds the blocks no declared group takes.
+     */
+    groups?: readonly {id: string; name: string; color?: string}[];
 }
 
 export interface PaletteVisibilityChoice {
@@ -56,7 +61,7 @@ const messages = {
         quick: 'Choose several at once', copyFrom: 'Copy settings from', copy: 'Copy', chooseSprite: 'Choose a sprite',
         sets: 'Setting shortcuts', addSet: 'Add setting shortcut', setName: 'Shortcut name', add: 'Add',
         standard: 'Standard block groups', extensions: 'Extension block groups', used: (count: number) => `In use ${count}`,
-        hiddenInUse: (count: number) => `Hidden and in use: ${count}`, cancel: 'Cancel', confirm: 'Confirm', close: 'Close'
+        hiddenInUse: (count: number) => `Hidden and in use: ${count}`, otherBlocks: 'Other blocks', cancel: 'Cancel', confirm: 'Confirm', close: 'Close'
     },
     ja: {
         title: 'パレット内のブロックグループの表示・非表示の設定', sprite: (name: string) => `スプライト「${name}」`, stage: '背景',
@@ -64,7 +69,7 @@ const messages = {
         quick: 'まとめて選ぶ', copyFrom: '設定のコピー元', copy: 'コピー', chooseSprite: 'スプライトを選ぶ',
         sets: '設定のショートカット', addSet: '設定のショートカットを追加', setName: 'ショートカットの名前', add: '追加',
         standard: '標準のブロックグループ', extensions: '機能拡張のブロックグループ', used: (count: number) => `使用中 ${count}`,
-        hiddenInUse: (count: number) => `非表示中・使用中 ${count} 件`, cancel: 'キャンセル', confirm: '確定', close: '閉じる'
+        hiddenInUse: (count: number) => `非表示中・使用中 ${count} 件`, otherBlocks: 'そのほかのブロック', cancel: 'キャンセル', confirm: '確定', close: '閉じる'
     }
 };
 const isJapanese = (locale?: string) => /^ja(?:-|$)/i.test(locale ?? '');
@@ -97,8 +102,13 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
         // The stage has no motion blocks.
         return standardGroups.filter(group => !(this.props.isStage && group === 'motion'));
     }
+    /** Every group on offer, in the order the screen lists them. */
+    offered() {
+        return [...this.standard(), ...this.props.extensions.flatMap(extension =>
+            extension.groups ? extension.groups.map(group => group.id) : [extension.id])];
+    }
     available(groups: readonly string[]) {
-        const offered = new Set<string>([...this.standard(), ...this.props.extensions.map(extension => extension.id)]);
+        const offered = new Set<string>(this.offered());
         return groups.filter(group => offered.has(group));
     }
     toggle(group: string) {
@@ -127,8 +137,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
         const taken = new Set([...this.props.sets, ...this.state.addedSets].map(set => set.id));
         let id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'set';
         for (let index = 2; taken.has(id); index++) id = `${id.replace(/-\d+$/, '')}-${index}`;
-        const groups = [...this.standard(), ...this.props.extensions.map(extension => extension.id)]
-            .filter(group => this.state.shown.has(group));
+        const groups = this.offered().filter(group => this.state.shown.has(group));
         this.setState(({addedSets}) => ({addedSets: [...addedSets, {id, name, groups}], naming: false, setName: ''}));
     }
     /**
@@ -145,8 +154,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
         return source ? this.available(source.groups) : [];
     }
     apply() {
-        const order = [...this.standard(), ...this.props.extensions.map(extension => extension.id)];
-        this.props.onApply({groups: order.filter(group => this.state.shown.has(group)), addedSets: this.state.addedSets});
+        this.props.onApply({groups: this.offered().filter(group => this.state.shown.has(group)), addedSets: this.state.addedSets});
     }
     render() {
         const {locale, targetName, isStage, used, extensions, onCancel} = this.props;
@@ -250,7 +258,29 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                         <h3>{text.extensions}</h3>
                         <div className="twextsec-review">
                             <ul className="twextsec-rows">
-                                {extensions.map(extension => (
+                                {extensions.map(extension => extension.groups ? (
+                                    <ExtensionRow
+                                        key={extension.id}
+                                        metadata={extension.metadata}
+                                        ids={[extension.id]}
+                                        locale={locale}
+                                        itemProps={{'data-extension': extension.id}}
+                                    >
+                                        <div className="tw-palette-visibility-extension-groups">
+                                            {extension.groups.map(group => (
+                                                <label key={group.id} data-group={group.id}
+                                                    data-highlighted={highlighted(group.id)}>
+                                                    <input type="checkbox" checked={shown.has(group.id)}
+                                                        onChange={() => this.toggle(group.id)} />
+                                                    <span className="tw-palette-visibility-swatch" aria-hidden="true"
+                                                        style={{color: group.color}}>●</span>
+                                                    {group.id === extension.id ? text.otherBlocks : group.name}
+                                                    {usedBadge(group.id)}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </ExtensionRow>
+                                ) : (
                                     <ExtensionRow
                                         key={extension.id}
                                         metadata={extension.metadata}
