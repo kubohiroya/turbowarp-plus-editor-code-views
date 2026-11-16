@@ -334,10 +334,14 @@ export interface SavedPaletteVisibility {
     order?: SavedPaletteOrder;
 }
 
-/** The order the palette's categories were dragged into: the top level, and the members of each group, by ID. */
+/**
+ * The order the palette's categories were dragged into: the top level, and the members of each group, by ID; and the
+ * groups pinned open, whose members the palette shows in place of the group's child palette.
+ */
 export interface SavedPaletteOrder {
     categories?: string[];
     groups?: Record<string, string[]>;
+    pinned?: string[];
 }
 
 /** The order the palette's categories were dragged into, for the whole project. */
@@ -348,7 +352,12 @@ export interface PaletteOrder {
     /** A group's members, by ID, in order, or nothing when they were never reordered. */
     members(groupId: string): string[] | undefined;
     setMembers(groupId: string, ids: readonly string[]): void;
-    /** The order to save, or nothing when nothing was reordered. */
+    /** Whether the group is pinned open, its members shown in the palette that shows the group. */
+    isPinned(groupId: string): boolean;
+    setPinned(groupId: string, pinned: boolean): void;
+    /** Calls `listener` after anything changes, including a loaded or forgotten order. Returns the function that stops. */
+    subscribe(listener: () => void): () => void;
+    /** The order to save, or nothing when nothing was reordered or pinned. */
     capture(): SavedPaletteOrder | undefined;
     /** Takes a saved order. A value that is not one leaves the palette in its own order. */
     apply(value: unknown): void;
@@ -359,39 +368,66 @@ export interface PaletteOrder {
 export function createPaletteOrder({onChange}: {onChange?(): void} = {}): PaletteOrder {
     let categories: string[] = [];
     let groups = new Map<string, string[]>();
+    let pinned = new Set<string>();
+    const listeners = new Set<() => void>();
+    const notify = () => {
+        for (const listener of [...listeners]) listener();
+    };
+    const changed = () => {
+        onChange?.();
+        notify();
+    };
     return {
         categories: () => [...categories],
         setCategories(ids) {
             categories = [...ids];
-            onChange?.();
+            changed();
         },
         members: groupId => groups.has(groupId) ? [...groups.get(groupId)!] : undefined,
         setMembers(groupId, ids) {
             groups.set(groupId, [...ids]);
-            onChange?.();
+            changed();
+        },
+        isPinned: groupId => pinned.has(groupId),
+        setPinned(groupId, value) {
+            if (pinned.has(groupId) === value) return;
+            if (value) pinned.add(groupId);
+            else pinned.delete(groupId);
+            changed();
+        },
+        subscribe(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
         },
         capture() {
             const saved: SavedPaletteOrder = {};
             if (categories.length) saved.categories = [...categories];
             if (groups.size) saved.groups = Object.fromEntries([...groups].map(([id, ids]) => [id, [...ids]]));
-            return saved.categories || saved.groups ? saved : undefined;
+            if (pinned.size) saved.pinned = [...pinned];
+            return saved.categories || saved.groups || saved.pinned ? saved : undefined;
         },
         apply(value) {
             categories = [];
             groups = new Map();
-            if (!value || typeof value !== 'object') return;
-            const saved = value as Record<string, unknown>;
-            categories = strings(saved.categories) ?? [];
-            if (saved.groups && typeof saved.groups === 'object' && !Array.isArray(saved.groups)) {
-                for (const [id, ids] of Object.entries(saved.groups as Record<string, unknown>)) {
-                    const members = strings(ids);
-                    if (members) groups.set(id, members);
+            pinned = new Set();
+            if (value && typeof value === 'object') {
+                const saved = value as Record<string, unknown>;
+                categories = strings(saved.categories) ?? [];
+                if (saved.groups && typeof saved.groups === 'object' && !Array.isArray(saved.groups)) {
+                    for (const [id, ids] of Object.entries(saved.groups as Record<string, unknown>)) {
+                        const members = strings(ids);
+                        if (members) groups.set(id, members);
+                    }
                 }
+                pinned = new Set(strings(saved.pinned) ?? []);
             }
+            notify();
         },
         reset() {
             categories = [];
             groups = new Map();
+            pinned = new Set();
+            notify();
         }
     };
 }

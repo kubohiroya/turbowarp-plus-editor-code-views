@@ -94,7 +94,7 @@ test('a group opens its members in a child palette, and a click outside closes i
 
     const click = (element: Element) => element.dispatchEvent(new dom.window.MouseEvent('click', {bubbles: true}));
     const popups = () => Array.from(doc.querySelectorAll('[data-palette-group-popup]'),
-        popup => `${popup.getAttribute('data-palette-group-popup')}:${Array.from(popup.children,
+        popup => `${popup.getAttribute('data-palette-group-popup')}:${Array.from(popup.querySelectorAll('[data-palette-group-item]'),
             item => item.getAttribute('data-palette-group-item')).join(',')}`);
     click(byId('media').item_);
     assert.deepEqual(popups(), ['media:looks,sound,more']);
@@ -295,5 +295,80 @@ test('a prepared tree puts each group\'s members in their saved order', () => {
     assert.deepEqual(topLevel(tree),
         ['motion', 'media', 'more<media', 'more/1<more', 'events<more', 'looks<media', 'sound<media', 'operators']);
     assert.deepEqual(groups.members.get('media'), ['more', 'looks', 'sound']);
+    controller.dispose();
+});
+
+test('pinning a group shows its members after it in the palette that showed the group, and unpinning folds them back', () => {
+    const {dom, tree} = parse(toolbox);
+    const doc = dom.window.document;
+    const order = createPaletteOrder();
+    let changes = 0;
+    order.subscribe(() => changes++);
+    const groups = flattenCategoryGroups(tree);
+    const menu = doc.createElement('div');
+    doc.body.append(menu);
+    const categories = Array.from(tree.children).map(element => {
+        const row = doc.createElement('div');
+        const item = doc.createElement('div');
+        item.textContent = element.getAttribute('id');
+        row.append(item);
+        menu.append(row);
+        return {id_: element.getAttribute('id')!, name_: '', item_: item, setSelected() {}};
+    });
+    const chosen: string[] = [];
+    const controller = attachPaletteCategoryGroups(menu, {categories: () => categories, horizontal: () => true,
+        choose: category => chosen.push(category.id_), order: () => order, locale: () => 'ja'});
+    controller.update(groups);
+    const byId = (id: string) => categories.find(category => category.id_ === id)!;
+    const shown = () => categories.filter(category => !category.item_.parentElement!.hidden).map(category => category.id_).join(',');
+    const click = (element: Element) => element.dispatchEvent(new dom.window.MouseEvent('click', {bubbles: true}));
+    const popupItems = (id: string) => Array.from(doc.querySelectorAll(`[data-palette-group-popup="${id}"] [data-palette-group-item]`),
+        item => item.getAttribute('data-palette-group-item')).join(',');
+
+    // The inner group, pinned from its child palette, joins the child palette it opened from.
+    click(byId('media').item_);
+    click(doc.querySelector('[data-palette-group-item="more"]')!);
+    const pinMore = doc.querySelector('[data-palette-group-popup="more"] > [data-palette-group-pin="unpinned"]')!;
+    assert.equal(pinMore.getAttribute('aria-label'), 'グループをパレットに広げて固定する');
+    click(pinMore);
+    assert.equal(order.isPinned('more'), true);
+    assert.equal(doc.querySelector('[data-palette-group-popup="more"]'), null);
+    assert.equal(popupItems('media'), 'looks,sound,more,events,more/1');
+    assert.equal(shown(), 'motion,media,operators');
+    assert.equal(controller.shownAs('events'), 'media');
+
+    // The outer group, pinned, joins the palette itself, its pinned member with it.
+    click(doc.querySelector('[data-palette-group-popup="media"] > [data-palette-group-pin="unpinned"]')!);
+    assert.equal(doc.querySelectorAll('[data-palette-group-popup]').length, 0);
+    assert.equal(shown(), 'motion,media,looks,sound,more,events,more/1,operators');
+    assert.equal(controller.shownAs('events'), 'events');
+    assert.equal(controller.isGroup('more'), true);
+    assert.equal(controller.anchorOf(byId('looks')), byId('looks').item_);
+    const unpin = byId('media').item_.querySelector('[data-palette-group-pin="pinned"]')!;
+    assert.ok(unpin);
+    assert.ok(byId('media').item_.hasAttribute('data-palette-group-pinned'));
+    // A pinned group without blocks of its own opens nothing.
+    click(byId('media').item_);
+    assert.equal(controller.isOpen(), false);
+    assert.deepEqual(chosen, []);
+
+    // Unpinning the outer group folds it, and its pinned member stays pinned inside it.
+    click(unpin);
+    assert.equal(order.isPinned('media'), false);
+    assert.equal(shown(), 'motion,media,operators');
+    assert.equal(byId('media').item_.querySelector('[data-palette-group-pin]'), null);
+    click(byId('media').item_);
+    assert.equal(popupItems('media'), 'looks,sound,more,events,more/1');
+    // Unpinning the inner group from the outer child palette draws it again.
+    click(doc.querySelector('[data-palette-group-item="more"] > [data-palette-group-pin="pinned"]')!);
+    assert.equal(order.isPinned('more'), false);
+    assert.equal(popupItems('media'), 'looks,sound,more');
+    assert.ok(changes >= 4);
+
+    // Another palette given the same order follows it.
+    order.setPinned('media', true);
+    assert.equal(shown(), 'motion,media,looks,sound,more,operators');
+    assert.deepEqual(createPaletteOrder().capture(), undefined);
+    assert.deepEqual(order.capture(), {pinned: ['media']});
     controller.dispose();
 });

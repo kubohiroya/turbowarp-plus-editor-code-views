@@ -1,6 +1,10 @@
 import React from 'react';
 import {IconMenuButton} from '@kubohiroya/turbowarp-plus-editor-windows';
 import type {PaletteItem, PaletteSource} from './detached-block-palette.ts';
+import {attachPaletteCategoryGroups} from './palette-category-groups.ts';
+import type {PaletteCategoryGroupsController, PaletteGroups} from './palette-category-groups.ts';
+
+const noGroups: PaletteGroups = {members: new Map(), withOwnContents: new Set()};
 
 const horizontalLayoutIconPath = 'M2 5h5v6H2zm7 0h5v6H9z';
 const verticalLayoutIconPath = 'M5 2h6v5H5zm0 7h6v5H5z';
@@ -37,6 +41,46 @@ export default function Palette({source, locale, categoryIcons, close, startDrag
     const selected = categories.find(category => category.id === categoryId) ?? categories[0];
     const selectedId = selected?.id;
     React.useLayoutEffect(() => source.subscribe(refresh), [source]);
+
+    // The editor's groups open in child palettes here too, and pinning one shows its members in this list.
+    const list = React.useRef<HTMLDivElement>(null);
+    const groupsControl = React.useRef<PaletteCategoryGroupsController | null>(null);
+    const layout = React.useRef(vertical);
+    layout.current = vertical;
+    const grouping = source.grouping?.();
+    // Opening a child palette or pinning a group only draws the list again; the blocks shown stay as they are.
+    const [, redraw] = React.useReducer(value => value + 1, 0);
+    React.useLayoutEffect(() => {
+        const menu = list.current;
+        const controller = attachPaletteCategoryGroups(menu, {
+            categories: () => source.categories().map(({id, label}) => ({
+                id_: id, name_: label, setSelected() {},
+                item_: menu.querySelector<HTMLElement>(`button[data-category-id="${CSS.escape(id)}"]`)
+            })).filter(category => category.item_),
+            // A row of categories, when the blocks are laid out below them.
+            horizontal: () => layout.current,
+            choose: category => {
+                setCategory(category.id_);
+                setTooltip(null);
+            },
+            order: () => source.grouping?.()?.order,
+            locale: () => locale,
+            onChange: redraw
+        });
+        groupsControl.current = controller;
+        return () => {
+            groupsControl.current = null;
+            controller.dispose();
+        };
+    }, [source, locale]);
+    const categoryKey = categories.map(category => category.id).join('\n');
+    React.useLayoutEffect(() => {
+        groupsControl.current?.update(grouping?.groups ?? noGroups);
+    }, [categoryKey, grouping?.groups, vertical]);
+    React.useLayoutEffect(() => grouping?.order.subscribe(redraw), [grouping?.order]);
+    // A group stands for the selected category while its child palette holds it.
+    const pressed = (id: string) => id === selectedId ||
+        (!!selectedId && groupsControl.current?.isGroup(id) && groupsControl.current.shownAs(selectedId) === id);
     React.useLayoutEffect(() => {
         setItems(selectedId ? source.read(selectedId) : []);
     }, [source, selectedId, revision]);
@@ -53,12 +97,14 @@ export default function Palette({source, locale, categoryIcons, close, startDrag
 
     return <main className="tw-detached-palette" data-palette-orientation={vertical ? 'vertical' : 'horizontal'}>
         <div className="tw-detached-palette__content">
-            <div className="tw-detached-palette__categories" role="group" aria-label={ja ? 'ブロックのカテゴリ' : 'Block categories'}
-                onScroll={() => setTooltip(null)}>
+            <div ref={list} className="tw-detached-palette__categories" role="group"
+                aria-label={ja ? 'ブロックのカテゴリ' : 'Block categories'} onScroll={() => setTooltip(null)}>
                 {categories.map(({id, label, color, image}) => {
                     const artwork = categoryIcons[id];
                     const backgroundImage = image || (artwork ? `url("${artwork}")` : undefined);
-                    return <button key={id} type="button" aria-label={label} aria-pressed={id === selectedId}
+                    // Each category sits in a row of its own, which a group hides while it holds the category.
+                    return <span key={id} className="tw-detached-palette__category"><button type="button" data-category-id={id}
+                        aria-label={label} aria-pressed={Boolean(pressed(id))}
                         onMouseEnter={event => showLabel(event.currentTarget, label)}
                         onMouseLeave={() => setTooltip(null)}
                         onFocus={event => showLabel(event.currentTarget, label)}
@@ -71,7 +117,7 @@ export default function Palette({source, locale, categoryIcons, close, startDrag
                         <span aria-hidden="true" className="tw-detached-palette__category-icon" style={{backgroundColor: color, backgroundImage}}>
                             {!backgroundImage && <LayoutIcon path="M2 4h5V2h3v2h4v8H2z" />}
                         </span>
-                    </button>;
+                    </button></span>;
                 })}
             </div>
             <div className="tw-detached-palette__blocks" role="group" aria-label={selected?.label}>
