@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
-import {argumentTextCut, installBlockArgumentText} from '../dist/block-argument-text.js';
+import {argumentTextCut, installBlockArgumentText, isLineBreakKey} from '../dist/block-argument-text.js';
 
 test('a value within the budget shows in full', () => {
     assert.equal(argumentTextCut('a'.repeat(30)), undefined);
@@ -35,9 +35,12 @@ function fixture() {
     dialog.close ??= function () {this.open = false;};
     const calls: string[] = [];
     const events: unknown[] = [];
+    let editing: any = null;
     class FieldTextInput {
+        static htmlInput_: HTMLInputElement | null = null;
         text_: string;
         sourceBlock_: any;
+        restrictor_: RegExp | null = null;
         constructor(text: string) {
             this.text_ = text;
         }
@@ -46,6 +49,9 @@ function fixture() {
         }
         showEditor_(quietInput?: boolean, readOnly?: boolean) {
             calls.push(`inline:${String(quietInput)}:${String(readOnly)}`);
+        }
+        onHtmlInputKeyDown_(event: KeyboardEvent) {
+            calls.push(`keydown:${event.shiftKey ? 'shift+' : ''}${event.key}`);
         }
         callValidator(text: string) {
             return text;
@@ -63,7 +69,14 @@ function fixture() {
     const ScratchBlocks = {
         FieldTextInput, FieldNumber,
         ScratchMsgs: {currentLocale_: 'ja'},
-        WidgetDiv: {hide() {calls.push('hide widget');}},
+        WidgetDiv: {hide() {
+            calls.push('hide widget');
+            // What widgetDispose_ does through maybeSaveEdit_: save the inline editor's value.
+            const input = FieldTextInput.htmlInput_;
+            if (input && editing) editing.setText(input.value);
+            FieldTextInput.htmlInput_ = null;
+            editing = null;
+        }},
         Events: {setGroup(group: boolean) {events.push(['group', group]);}}
     };
     const block = {rendered: true, workspace: {getInjectionDiv: () => document.body}, render() {events.push(['render']);}};
@@ -73,7 +86,18 @@ function fixture() {
         created.sourceBlock_ = block;
         return created;
     };
-    return {document, window, calls, events, block, ScratchBlocks, field, FieldTextInput, FieldNumber};
+    // The inline editor as showEditor_ leaves it, with the caret after `caret` units.
+    const inline = (target: any, value: string, caret = value.length, selectionEnd = caret) => {
+        const input = document.createElement('input');
+        input.value = value;
+        document.body.append(input);
+        input.setSelectionRange(caret, selectionEnd);
+        FieldTextInput.htmlInput_ = input;
+        editing = target;
+        return input;
+    };
+    const key = (init: KeyboardEventInit) => new window.KeyboardEvent('keydown', {key: 'Enter', keyCode: 13, cancelable: true, ...init} as KeyboardEventInit);
+    return {document, window, calls, events, block, ScratchBlocks, field, inline, key, FieldTextInput, FieldNumber};
 }
 
 test('the block shows the cut value with an ellipsis and keeps the full value', () => {
@@ -86,10 +110,11 @@ test('the block shows the cut value with an ellipsis and keeps the full value', 
 
 test('installing twice wraps the field once', () => {
     const {ScratchBlocks, FieldTextInput} = fixture();
-    const {getDisplayText_, showEditor_} = FieldTextInput.prototype;
+    const {getDisplayText_, showEditor_, onHtmlInputKeyDown_} = FieldTextInput.prototype;
     installBlockArgumentText(ScratchBlocks);
     assert.equal(FieldTextInput.prototype.getDisplayText_, getDisplayText_);
     assert.equal(FieldTextInput.prototype.showEditor_, showEditor_);
+    assert.equal(FieldTextInput.prototype.onHtmlInputKeyDown_, onHtmlInputKeyDown_);
 });
 
 test('a short value keeps the inline editor', () => {
@@ -148,4 +173,84 @@ test('a save after the block went away changes nothing', () => {
     document.querySelector('form').dispatchEvent(new window.Event('submit', {cancelable: true}));
     assert.equal(long.text_, 'x'.repeat(40));
     assert.deepEqual(events, []);
+});
+
+test('only Shift+Enter alone, outside a composition, asks for a line break', () => {
+    assert.equal(isLineBreakKey({key: 'Enter', keyCode: 13, shiftKey: true}), true);
+    assert.equal(isLineBreakKey({key: 'Enter', keyCode: 13}), false);
+    assert.equal(isLineBreakKey({key: 'Enter', keyCode: 13, shiftKey: true, ctrlKey: true}), false);
+    assert.equal(isLineBreakKey({key: 'Enter', keyCode: 13, shiftKey: true, metaKey: true}), false);
+    assert.equal(isLineBreakKey({key: 'Enter', keyCode: 13, shiftKey: true, altKey: true}), false);
+    assert.equal(isLineBreakKey({key: 'Enter', keyCode: 13, shiftKey: true, isComposing: true}), false);
+    assert.equal(isLineBreakKey({key: 'Process', keyCode: 229, shiftKey: true}), false);
+    assert.equal(isLineBreakKey({key: 'a', keyCode: 65, shiftKey: true}), false);
+    assert.equal(isLineBreakKey(null), false);
+});
+
+test('Enter alone still goes to the inline editor\'s own handler', () => {
+    const {document, calls, field, inline, key, FieldTextInput} = fixture();
+    const text = field(FieldTextInput, 'hello');
+    inline(text, 'hello');
+    text.onHtmlInputKeyDown_(key({}));
+    assert.deepEqual(calls, ['keydown:Enter']);
+    assert.equal(document.querySelector('dialog'), null);
+});
+
+test('Shift+Enter saves the inline edit and continues in the dialog with a line break at the caret', () => {
+    const {document, window, calls, events, field, inline, key, FieldTextInput} = fixture();
+    const text = field(FieldTextInput, 'hello');
+    inline(text, 'helloworld', 5);
+    const event = key({shiftKey: true});
+    text.onHtmlInputKeyDown_(event);
+    assert.equal(event.defaultPrevented, true);
+    assert.deepEqual(calls, ['hide widget']);
+    // The inline edit is saved as Enter would save it, without the line break.
+    assert.equal(text.text_, 'helloworld');
+    const area = document.querySelector('textarea');
+    assert.equal(area.value, 'hello\nworld');
+    assert.equal(area.selectionStart, 6);
+    assert.equal(area.selectionEnd, 6);
+    events.length = 0;
+    document.querySelector('form').dispatchEvent(new window.Event('submit', {cancelable: true}));
+    assert.equal(text.text_, 'hello\nworld');
+    assert.deepEqual(events, [['group', true], ['change', 'helloworld', 'hello\nworld'], ['group', false], ['render']]);
+    // The block shows the first line.
+    assert.equal(text.getDisplayText_(), 'hello…');
+});
+
+test('Shift+Enter replaces the selection with the line break', () => {
+    const {document, field, inline, key, FieldTextInput} = fixture();
+    const text = field(FieldTextInput, 'a-b');
+    inline(text, 'a-b', 1, 2);
+    text.onHtmlInputKeyDown_(key({shiftKey: true}));
+    const area = document.querySelector('textarea');
+    assert.equal(area.value, 'a\nb');
+    assert.equal(area.selectionStart, 2);
+});
+
+test('cancelling the dialog after Shift+Enter keeps the inline edit only', () => {
+    const {document, window, field, inline, key, FieldTextInput} = fixture();
+    const text = field(FieldTextInput, 'hello');
+    inline(text, 'hello!');
+    text.onHtmlInputKeyDown_(key({shiftKey: true}));
+    document.querySelector('dialog').dispatchEvent(new window.Event('cancel', {cancelable: true}));
+    assert.equal(document.querySelector('dialog'), null);
+    assert.equal(text.text_, 'hello!');
+});
+
+test('number fields, fields with a restrictor and read-only editors take no line break', () => {
+    const {document, calls, field, inline, key, FieldTextInput, FieldNumber} = fixture();
+    const number = field(FieldNumber, '10');
+    inline(number, '10');
+    number.onHtmlInputKeyDown_(key({shiftKey: true}));
+    const restricted = field(FieldTextInput, '10');
+    restricted.restrictor_ = /[\d]/;
+    inline(restricted, '10');
+    restricted.onHtmlInputKeyDown_(key({shiftKey: true}));
+    const readOnly = field(FieldTextInput, 'x');
+    inline(readOnly, 'x').readOnly = true;
+    readOnly.onHtmlInputKeyDown_(key({shiftKey: true}));
+    assert.deepEqual(calls, ['keydown:shift+Enter', 'keydown:shift+Enter', 'keydown:shift+Enter']);
+    assert.equal(document.querySelector('dialog'), null);
+    assert.equal(number.text_, '10');
 });
