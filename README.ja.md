@@ -20,6 +20,7 @@ TurboWarp Plus Editor のコードの画面。1つの作品と1つの取り消�
 | `./palette-category-visibility`・`./palette-visibility-dialog` | スプライト・背景ごとに、パレットに出すブロックグループを選ぶ。設定はエディターの画面状態として保存し、選ぶ画面を持つ |
 | `./block-argument-text` | 長いテキストの引数を短く表示し、ダイアログで編集する。テキストの引数で Shift+Enter を押すと、改行を入れてダイアログで編集を続ける |
 | `./block-number-input` | 数値の引数に入力した全角の数字・記号を半角にする |
+| `./sprite-copy-notice` | `attachSpriteCopyNotice`。スプライト一覧の上で離したスクリプトがスプライトや背景にコピーされたとき、そのタイルに印を付け、コピー先を示す通知を出す。通知の「元に戻す」でコピーを取り除く |
 | `./asset-edit-session`・`./dockview-unsaved` | 素材の編集のセッションと、Dockview のタブの未保存の印。ホストが GUI のエディターとレイアウトにつなぐ |
 | `./styles.css` | 上のすべてのスタイルシート |
 
