@@ -62,7 +62,7 @@ Each sprite and the stage can choose which block groups the palette shows: the s
 | `paletteGroupSets(locale, projectSets)` | Standard, Expression, Variables and lists, Basic control, and the project's own sets |
 | `attachPaletteMenuButton(menu, getLocale, getItems)` | Puts a ▼ button at the end of the category menu (the right end of a horizontal palette, the bottom of a vertical one). Pressing it lists the items the host gives: the group settings (`paletteVisibilityMenuLabel`) and the host's extension items |
 
-`openPaletteVisibilityDialog(document, props)` from `./palette-visibility-dialog` opens the screen that chooses the groups. Each extension is drawn with `ExtensionRow` from `@kubohiroya/turbowarp-extension-security-dialog/react`, so it looks the same as in the screen that adds extensions. Applying passes the groups to show, and the sets added in the screen, to `onApply`.
+`openPaletteVisibilityDialog(document, props)` from `./palette-visibility-dialog` opens the screen that chooses the groups. Each extension is drawn with `ExtensionRow` from `@kubohiroya/turbowarp-extension-security-dialog/react`, so it looks the same as in the screen that adds extensions. Applying passes the groups to show, and the sets added in the screen, to `onApply`. With `newSprite`, the screen asks about a sprite just added: it names it as a new sprite and offers “Don’t ask next time”, whose value `onApply` receives as `dontAskAgain`.
 
 The host installs `@kubohiroya/turbowarp-extension-security-dialog` (0.9.0 or later) and loads its `styles.css`, and registers the store as a screen-state slice. Choosing groups inside one extension comes once the VM can make a category per group.
 
