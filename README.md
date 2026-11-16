@@ -20,6 +20,8 @@ The code views of TurboWarp Plus Editor: code in tabs and windows that share one
 | `./palette-category-reorder`, `./palette-category-search`, `./palette-dropdown-resize` | Reordering and searching palette categories, and resizing palette dropdowns |
 | `./block-argument-text` | Shortens long text arguments and edits them in a dialog |
 | `./block-number-input` | Converts full-width digits and signs typed into number arguments to half-width |
+| `./target-undo-history` | Keeps the code area's undo and redo history for each sprite and the stage across target switches (`attachTargetUndoHistory({vm, getBlockly})`). A history comes back only while the target's code is unchanged since it was put aside |
+| `./sprite-restore-history` | Lets Edit → Restore Sprite go back through the last 10 deleted sprites, not only the last one (`attachSpriteRestoreHistory({store, vm})`, with the GUI's Redux store) |
 | `./asset-edit-session`, `./dockview-unsaved` | The asset edit session and the unsaved marks on Dockview tabs, which the host connects to the GUI's editors and layout |
 | `./styles.css` | The stylesheet for all of the above |
 
