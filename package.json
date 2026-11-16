@@ -66,6 +66,10 @@
       "types": "./dist/block-number-input.d.ts",
       "default": "./dist/block-number-input.js"
     },
+    "./clean-up-comments": {
+      "types": "./dist/clean-up-comments.d.ts",
+      "default": "./dist/clean-up-comments.js"
+    },
     "./sprite-copy-notice": {
       "types": "./dist/sprite-copy-notice.d.ts",
       "default": "./dist/sprite-copy-notice.js"
