@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import Palette from './detached-block-palette-view.tsx';
+import type {PaletteGroups, PaletteGroupsOrder} from './palette-category-groups.ts';
 
 type Point = {x: number; y: number};
 type PaletteCategory = {id: string; label: string; color?: string; image?: string};
@@ -11,9 +12,13 @@ export type PaletteItem = {
     insert?(point?: Point): void;
 };
 
+/** The groups of the editor's palette, which the detached one shows the same way, and the order and pins they share. */
+export type PaletteGrouping = {groups: PaletteGroups; order: PaletteGroupsOrder};
+
 export type PaletteSource = {
     surface: SVGSVGElement;
     categories(): PaletteCategory[];
+    grouping?(): PaletteGrouping | undefined;
     read(id: string): PaletteItem[];
     subscribe(refresh: () => void): () => void;
     setDetached(detached: boolean): void;
@@ -97,12 +102,15 @@ function registerDetachedBlockPalette(workspace: object, source: PaletteSource) 
     };
 }
 
-export function connectDetachedBlockPalette({blocks, workspace, flyout, menu, categories, show, setDetached}: {
+export function connectDetachedBlockPalette({blocks, workspace, flyout, menu, categories, grouping, show, setDetached}: {
     blocks: any;
     workspace: any;
     flyout: any;
     menu: HTMLElement;
+    /** Every category, members of groups included, in the palette's order. */
     categories(): PaletteCategory[];
+    /** The palette's groups, so the detached palette opens them in child palettes too. */
+    grouping?(): PaletteGrouping | undefined;
     show(id: string): void;
     setDetached(detached: boolean): void;
 }) {
@@ -119,7 +127,7 @@ export function connectDetachedBlockPalette({blocks, workspace, flyout, menu, ca
         return position.matrixTransform(matrix.inverse());
     };
     return registerDetachedBlockPalette(workspace, {
-        surface, categories, setDetached,
+        surface, categories, grouping, setDetached,
         read(id) {
             show(id);
             const items: PaletteItem[] = [];

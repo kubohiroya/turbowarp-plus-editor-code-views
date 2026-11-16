@@ -154,11 +154,17 @@ export interface PaletteCategoryGroupsOptions {
     /** Called after the members of a group were reordered, so the host can lay out its categories with `arrange`. */
     onReorder?(): void;
     /**
-     * Where the members' order is kept, such as the palette settings saved with the project. By default the order
-     * lasts while the palette does.
+     * Where the members' order and the pinned groups are kept, such as the palette settings saved with the project.
+     * Palettes given the same one, such as the editor's and the detached one, follow each other. By default they last
+     * while the palette does.
      */
-    order?(): Pick<PaletteOrder, 'members' | 'setMembers'> | undefined;
+    order?(): PaletteGroupsOrder | undefined;
+    /** The locale the pin buttons are labelled in. By default, the document's language. */
+    locale?(): string;
 }
+
+/** The part of a {@link PaletteOrder} the child palettes use. */
+export type PaletteGroupsOrder = Pick<PaletteOrder, 'members' | 'setMembers' | 'isPinned' | 'setPinned' | 'subscribe'>;
 
 export interface PaletteCategoryGroupsController {
     /**
@@ -168,10 +174,21 @@ export interface PaletteCategoryGroupsController {
     prepare(tree: Element, options?: {catalog?: PaletteGroupCatalog; visible?: ReadonlySet<string> | null}): PaletteGroups;
     /** Takes the groups of the toolbox just drawn: hides their members' icons and marks the groups' icons. */
     update(groups: PaletteGroups): void;
+    /** The groups the palette was last drawn with, members in their order, to show another palette the same way. */
+    current(): PaletteGroups;
+    /** Whether the category is a group the palette shows, whose icon opens a child palette. */
     isGroup(id: string): boolean;
+    /**
+     * The category whose icon stands for the id in the palette: its own, when the palette shows it, or that of the
+     * nearest group the palette shows. A pinned group's members are shown in the palette that shows the group.
+     */
+    shownAs(id: string): string;
     /** The id of the outermost group the category is in, or its own id when it is in none. */
     topLevelId(id: string): string;
-    /** Opens the group's child palette from its icon, or closes it if it is open. */
+    /**
+     * Opens the group's child palette from its icon, or closes it if it is open. A pinned group shows its members in
+     * place, so its icon only opens its own blocks, if it has any.
+     */
     toggle(category: PaletteCategory, focus?: boolean): void;
     isOpen(): boolean;
     /** The icon the palette shows for the category: its own, or that of the group it is in. */
@@ -237,13 +254,63 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         while (parentOf.has(current)) current = parentOf.get(current)!;
         return current;
     };
+    const isPinned = (id: string) => groups.members.has(id) && memberOrder().isPinned(id);
+    // A category is in the palette when every group it is in is pinned open.
+    const inPalette = (id: string) => {
+        for (let parent = parentOf.get(id); parent !== undefined; parent = parentOf.get(parent)) {
+            if (!isPinned(parent)) return false;
+        }
+        return true;
+    };
+    const shownAs = (id: string) => {
+        let current = id;
+        while (!inPalette(current)) current = parentOf.get(current)!;
+        return current;
+    };
+    // Changes this palette makes itself, which it does not need to hear back about.
+    let writing = false;
+    const quietly = (write: () => void) => {
+        writing = true;
+        try {
+            write();
+        } finally {
+            writing = false;
+        }
+    };
+    const japanese = () => /^ja(?:-|$)/i.test(options.locale?.() ?? doc.documentElement.lang);
+    /** A pin button: pinned, it folds the group back; unpinned, it pins the group open. */
+    const pinButton = (pinned: boolean, press: () => void) => {
+        const button = doc.createElement('span');
+        button.className = 'tw-palette-group-pin';
+        button.setAttribute('data-palette-group-pin', pinned ? 'pinned' : 'unpinned');
+        button.setAttribute('role', 'button');
+        button.tabIndex = 0;
+        const label = pinned ? (japanese() ? 'グループの固定を外して、たたむ' : 'Unpin and fold the group') :
+            (japanese() ? 'グループをパレットに広げて固定する' : 'Pin the group open in the palette');
+        button.setAttribute('aria-label', label);
+        button.title = label;
+        const pressed = (event: Event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            press();
+        };
+        button.addEventListener('click', pressed, {signal: events.signal});
+        button.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') pressed(event);
+        }, {signal: events.signal});
+        // Scratch Blocks would open the category the button sits on.
+        for (const type of ['mouseup', 'touchend']) {
+            button.addEventListener(type, event => event.stopPropagation(), {signal: events.signal});
+        }
+        return button;
+    };
 
     const markSelection = () => {
         for (const [id] of groups.members) {
-            if (parentOf.has(id)) continue;
+            if (!inPalette(id)) continue;
             const item = categoryById(id)?.item_;
             if (!item) continue;
-            const current = selected !== null && selected !== id && topLevelOf(selected) === id;
+            const current = selected !== null && selected !== id && shownAs(selected) === id;
             item.toggleAttribute('data-palette-group-current', current);
             if (current) item.classList.add(selectedClass);
             else if (selected !== id) item.classList.remove(selectedClass);
@@ -285,11 +352,13 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
     };
 
     const activate = (category: PaletteCategory, entry: HTMLElement, depth: number, focus: boolean, self: boolean) => {
-        if (!self && groups.members.has(category.id_)) {
+        if (!self && groups.members.has(category.id_) && !isPinned(category.id_)) {
             if (stack[depth]?.id === category.id_) closeFrom(depth);
             else open(category, entry, depth, focus);
             return;
         }
+        // A pinned group without blocks of its own shows its members where it is, so there is nothing to open.
+        if (!self && groups.members.has(category.id_) && !groups.withOwnContents.has(category.id_)) return;
         close();
         options.choose(category);
     };
@@ -301,9 +370,19 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         entry.setAttribute('data-palette-group-item', category.id_);
         entry.setAttribute('role', 'menuitem');
         entry.tabIndex = -1;
-        for (const child of Array.from(category.item_.children)) entry.append(child.cloneNode(true));
+        entry.title = category.item_.textContent?.trim() || category.item_.getAttribute('aria-label') || '';
+        for (const child of Array.from(category.item_.children)) {
+            if (!child.hasAttribute('data-palette-group-pin')) entry.append(child.cloneNode(true));
+        }
         const isGroup = !self && groups.members.has(category.id_);
-        if (isGroup) {
+        if (isGroup && isPinned(category.id_)) {
+            entry.setAttribute('data-palette-group-pinned', '');
+            // Folding the group back draws this child palette again.
+            entry.append(pinButton(true, () => {
+                quietly(() => memberOrder().setPinned(category.id_, false));
+                reopen(depth - 1);
+            }));
+        } else if (isGroup) {
             entry.setAttribute('aria-haspopup', 'true');
             entry.setAttribute('aria-expanded', 'false');
         }
@@ -325,7 +404,7 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
             const backward = options.horizontal() ? (options.rtl ? 'ArrowRight' : 'ArrowLeft') : 'ArrowUp';
             if (event.key !== forward && event.key !== backward) return;
             event.preventDefault();
-            const entries = Array.from(entry.parentElement!.children) as HTMLElement[];
+            const entries = Array.from(entry.parentElement!.querySelectorAll(':scope > [data-palette-group-item]')) as HTMLElement[];
             const index = entries.indexOf(entry) + (event.key === forward ? 1 : -1);
             entries[(index + entries.length) % entries.length].focus();
         }, {signal: events.signal});
@@ -355,9 +434,22 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         popup.style.fontSize = look.fontSize;
         popup.style.fontFamily = look.fontFamily;
         if (options.rtl) popup.dir = 'rtl';
+        // Pinning the group shows its members in the palette that shows the group.
+        popup.append(pinButton(false, () => pinFrom(depth)));
         if (groups.withOwnContents.has(group.id_)) popup.append(createEntry(group, depth, true));
-        const entries = members.map(member => createEntry(member, depth + 1));
-        popup.append(...entries);
+        const entries: HTMLElement[] = [];
+        // A pinned member group is followed by its own members, here rather than in a child palette of its own.
+        const add = (member: PaletteCategory, direct: boolean) => {
+            const entry = createEntry(member, depth + 1);
+            if (direct) entries.push(entry);
+            popup.append(entry);
+            if (!isPinned(member.id_)) return;
+            for (const id of groups.members.get(member.id_) ?? []) {
+                const inner = categoryById(id);
+                if (inner) add(inner, false);
+            }
+        };
+        for (const member of members) add(member, true);
         (menu.parentElement ?? doc.body).append(popup);
         place(popup, anchor);
         anchor.setAttribute('aria-expanded', 'true');
@@ -366,7 +458,7 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
             (from, to) => {
                 const order = members.map(member => member.id_);
                 order.splice(to, 0, order.splice(from, 1)[0]);
-                memberOrder().setMembers(group.id_, order);
+                quietly(() => memberOrder().setMembers(group.id_, order));
                 groups.members.set(group.id_, order);
                 open(group, anchor, depth, false);
                 options.onReorder?.();
@@ -377,14 +469,81 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
     };
 
     const toggle = (category: PaletteCategory, focus = false) => {
-        if (stack[0]?.id === category.id_) close();
+        if (isPinned(category.id_)) {
+            close();
+            if (groups.withOwnContents.has(category.id_)) options.choose(category);
+        } else if (stack[0]?.id === category.id_) close();
         else open(category, category.item_, 0, focus);
+    };
+    // Draws the child palette at the depth again, or the palette itself.
+    function reopen(depth: number) {
+        if (depth < 0 || !stack[depth]) {
+            close();
+            applyVisibility();
+            return;
+        }
+        const {id, anchor} = stack[depth];
+        const group = categoryById(id);
+        if (group) open(group, anchor, depth, false);
+        else closeFrom(depth);
+    }
+    // Pins open the group of the child palette at the depth: its members join the palette it opened from.
+    function pinFrom(depth: number) {
+        const {id} = stack[depth];
+        quietly(() => memberOrder().setPinned(id, true));
+        closeFrom(depth);
+        if (depth > 0) reopen(depth - 1);
+        else applyVisibility();
+    }
+    // Shows the categories every group of which is pinned open, hides the others, and marks the groups shown.
+    function applyVisibility() {
+        for (const category of options.categories()) {
+            const id = category.id_;
+            const item = category.item_;
+            const row = item.parentElement;
+            if (row && row !== menu) row.hidden = !inPalette(id);
+            const group = groups.members.has(id) && inPalette(id);
+            if (group) {
+                item.setAttribute('aria-haspopup', 'true');
+                if (!item.hasAttribute('aria-expanded')) item.setAttribute('aria-expanded', 'false');
+                item.setAttribute('data-palette-group', '');
+                item.classList.add('tw-palette-group');
+            }
+            const pinned = group && isPinned(id);
+            item.toggleAttribute('data-palette-group-pinned', pinned);
+            const button = item.querySelector(':scope > [data-palette-group-pin]');
+            if (pinned && !button) {
+                item.append(pinButton(true, () => {
+                    quietly(() => memberOrder().setPinned(id, false));
+                    close();
+                    applyVisibility();
+                }));
+            } else if (!pinned) button?.remove();
+        }
+        markSelection();
+        options.onChange?.();
+    }
+    // Another palette given the same order, or a project loaded, may pin or fold groups.
+    let watched: PaletteGroupsOrder | undefined;
+    let unwatch: (() => void) | undefined;
+    const watchOrder = () => {
+        const order = memberOrder();
+        if (order === watched) return;
+        unwatch?.();
+        watched = order;
+        unwatch = order.subscribe(() => {
+            if (writing) return;
+            close();
+            applyVisibility();
+        });
     };
 
     const groupItem = (target: EventTarget | null) => {
         if (!(target instanceof doc.defaultView!.Node)) return null;
+        // A pin button handles its own press.
+        if ((target as Element).closest?.('[data-palette-group-pin]')) return null;
         return options.categories().find(category => groups.members.has(category.id_) &&
-            !parentOf.has(category.id_) && category.item_.contains(target as Node)) ?? null;
+            inPalette(category.id_) && category.item_.contains(target as Node)) ?? null;
     };
     // Scratch Blocks opens a category on mouseup (touchend on touch screens); a group opens its child palette on click.
     for (const type of ['mouseup', 'touchend']) {
@@ -451,17 +610,8 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         update(next) {
             close();
             useGroups(next);
+            watchOrder();
             for (const category of options.categories()) {
-                const member = parentOf.has(category.id_);
-                const row = category.item_.parentElement;
-                if (row && row !== menu) row.hidden = member;
-                const group = groups.members.has(category.id_) && !member;
-                if (group) {
-                    category.item_.setAttribute('aria-haspopup', 'true');
-                    category.item_.setAttribute('aria-expanded', 'false');
-                    category.item_.setAttribute('data-palette-group', '');
-                    category.item_.classList.add('tw-palette-group');
-                }
                 const {setSelected} = category;
                 category.setSelected = function (value: boolean) {
                     setSelected.call(this, value);
@@ -471,13 +621,15 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
                 };
                 if (category.item_.classList.contains(selectedClass)) selected = category.id_;
             }
-            markSelection();
+            applyVisibility();
         },
-        isGroup: id => groups.members.has(id) && !parentOf.has(id),
+        current: () => groups,
+        isGroup: id => groups.members.has(id) && inPalette(id),
+        shownAs,
         topLevelId: topLevelOf,
         toggle,
         isOpen: () => stack.length > 0,
-        anchorOf: category => categoryById(topLevelOf(category.id_))?.item_ ?? category.item_,
+        anchorOf: category => categoryById(shownAs(category.id_))?.item_ ?? category.item_,
         arrange(categories, rank) {
             const position = new Map<string, number>();
             const visit = (id: string) => {
@@ -511,19 +663,20 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         syncButtons(openId) {
             const horizontal = options.horizontal();
             for (const category of options.categories()) {
-                if (!groups.members.has(category.id_) || parentOf.has(category.id_)) continue;
+                if (!groups.members.has(category.id_) || !inPalette(category.id_)) continue;
                 const item = category.item_;
                 if (horizontal) item.tabIndex = 0;
                 else item.removeAttribute('tabindex');
                 item.setAttribute('role', 'button');
                 item.toggleAttribute('data-palette-group-shown', horizontal && openId !== null && openId !== category.id_ &&
-                    topLevelOf(openId) === category.id_);
+                    shownAs(openId) === category.id_);
             }
         },
         contains,
         close,
         dispose() {
             close();
+            unwatch?.();
             events.abort();
         }
     };
