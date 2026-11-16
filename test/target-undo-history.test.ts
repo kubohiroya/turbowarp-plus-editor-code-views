@@ -136,3 +136,15 @@ test('attachTargetUndoHistory installs once ScratchBlocks has loaded, and not af
     await early.ready;
     assert.equal(Workspace.prototype.clearUndo, nativeClearUndo);
 });
+
+test('attachTargetUndoHistory reports an install that throws instead of rejecting', async () => {
+    const errors: unknown[] = [];
+    const attached = attachTargetUndoHistory({
+        vm: {editingTarget: null} as never,
+        getBlockly: async () => ({}) as never,
+        onError: error => errors.push(error)
+    });
+    await attached.ready;
+    assert.equal(errors.length, 1);
+    attached.dispose();
+});

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
-import {applyPlan, describePlan, describeRefusal, installVariableMerge, planMerge, planScopeChange,
+import {applyPlan, attachVariableMerge, describePlan, describeRefusal, installVariableMerge, planMerge, planScopeChange,
     undoPlan, variableMergeMessages} from '../dist/variable-merge.js';
 
 // Shapes from scratch-vm: Target.variables, Blocks._blocks with fields {name, id, value, variableType},
@@ -428,4 +428,16 @@ test('the palette\'s variable menu offers the scope change for a sprite, not for
     p.vm.editingTarget = p.sprite1;
     assert.deepEqual(menu(block('a')), ['Rename variable']);
     window.close();
+});
+
+test('attachVariableMerge reports an install that throws instead of rejecting', async () => {
+    const errors: unknown[] = [];
+    const attached = attachVariableMerge({
+        vm: {runtime: {targets: []}} as never,
+        getBlockly: async () => new Proxy({}, {get () { throw new Error("broken ScratchBlocks"); }}) as never,
+        onError: error => errors.push(error)
+    });
+    await attached.ready;
+    assert.equal(errors.length, 1);
+    attached.dispose();
 });

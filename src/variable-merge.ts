@@ -527,7 +527,7 @@ export function attachVariableMerge ({vm, getBlockly, document, locale, onError}
     const ready = Promise.resolve().then(() => getBlockly()).then(ScratchBlocks => {
         if (disposed || !ScratchBlocks) return;
         remove = installVariableMerge(vm, ScratchBlocks, {document, locale, onError});
-    });
+    }).catch(onError ?? (error => console.error(error)));
     return {
         ready,
         dispose () {
