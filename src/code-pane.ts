@@ -7,12 +7,13 @@ type Bridge = NonNullable<ReturnType<typeof getCodeSession>['bridge']>;
 type Presentation = NonNullable<ReturnType<Bridge['capturePane']>>;
 
 /** The code area of a tab as a saved workspace keeps it: zoom, scroll position and script view. */
-export interface SavedCodePane {
+// A type alias, not an interface, so it fits the workbench's `Record<string, unknown>` for a serialized pane.
+export type SavedCodePane = {
     scale: number;
     x: number;
     y: number;
     scriptView?: ScriptView;
-}
+};
 
 const scriptViews: readonly ScriptView[] = ['free', 'z', 'n'];
 const finite = (value: unknown, limit: number): value is number =>
