@@ -17,7 +17,7 @@ TurboWarp Plus Editor のコードの画面。1つの作品と1つの取り消�
 | `./target-combobox` | コードの窓の対象の選択 |
 | `./detached-block-palette` | 別窓のブロックパレット |
 | `./palette-category-reorder`・`./palette-category-search`・`./palette-dropdown-resize` | パレットのカテゴリの並べ替えと検索、パレットのドロップダウンの大きさの変更 |
-| `./palette-category-visibility`・`./palette-visibility-dialog` | スプライト・背景ごとに、パレットに出すブロックグループを選ぶ。設定はパレットのコメントに保存し、選ぶ画面を持つ |
+| `./palette-category-visibility`・`./palette-visibility-dialog` | スプライト・背景ごとに、パレットに出すブロックグループを選ぶ。設定はエディターの画面状態として保存し、選ぶ画面を持つ |
 | `./block-argument-text` | 長いテキストの引数を短く表示し、ダイアログで編集する |
 | `./asset-edit-session`・`./dockview-unsaved` | 素材の編集のセッションと、Dockview のタブの未保存の印。ホストが GUI のエディターとレイアウトにつなぐ |
 | `./styles.css` | 上のすべてのスタイルシート |
@@ -46,7 +46,7 @@ MPL-2.0。turbowarp-plus-editor の `packages/editor-views` と `packages/editor
 
 スプライト・背景ごとに、パレットに出すブロックグループ（標準のグループと、機能拡張のグループ）を選べる。TypeScript で言えば、作品の `extensions` が package.json、スプライトごとの設定が各ファイルの import 文にあたる。
 
-- 設定は sb3-toolchain の展開ソース形式 2 と同じ、スプライト・背景ごとのパレットのコメントに入る（作品フォルダでは `block-palette.json`）。既定と同じスプライトにはコメントを置かない。背景のコメントは、作品の「適用可能なセット」も持つ。
+- 設定は作品のコードではなくエディターのもので、タブの配置と同じ画面状態に入る。SB3 では `tw-plus/workspace.json`、作品フォルダでは `.tw-plus/workspace.json` の `blockPalette` のスライスになる。スプライトはタブの配置と同じく名前で、背景は `stage` で記録する。
 - 設定のないスプライト・背景は、標準のグループと、そのコードが使っている機能拡張のグループを出す。
 - 非表示にしても、コード領域のブロックはそのまま見えて編集できる。
 
@@ -54,14 +54,14 @@ MPL-2.0。turbowarp-plus-editor の `packages/editor-views` と `packages/editor
 
 | 関数 | 内容 |
 | --- | --- |
-| `visibleGroups(target, extensionIds)` | 対象に出すグループ |
+| `createPaletteVisibilityStore()` | 1つの作品の設定を、実行時の対象の ID ごとに持つ。名前を変えたスプライトも設定を保つ。`visible`・`set`・`copy`（複製）・`sets`・`addSets`、画面状態のスライスへの `capture(targets)` と `apply(value, targets)`、`reset` |
+| `paletteScreenStateKey` | 画面状態のスライスの名前（`blockPalette`） |
 | `filterToolboxTree(tree, visible)` | パレットを描く前のツールボックスの木から、出さないカテゴリを外す |
-| `readTargetPalette(target)`・`writeTargetPalette(target, groups, options)` | パレットのコメントを読み書きする。書く文は sb3-toolchain の `formatBlockPaletteComment` と同じ |
-| `usedGroups(target)`・`groupOfOpcode(opcode)` | コードが使っているグループと、その数 |
+| `usedGroups(target)`・`groupOfOpcode(opcode)`・`defaultVisibleGroups(target, extensionIds)` | コードが使っているグループとその数、設定のない対象に出すグループ |
 | `paletteGroupSets(locale, projectSets)` | 「標準」「表現」「変数・リスト」「基本の制御」と、作品のセット |
 | `attachPaletteMenuButton(menu, getLocale, getItems)` | カテゴリの一覧の末尾（横配置では右端、縦配置では下端）に ▼ のボタンを置く。押すと、ホストが渡す項目のメニューを出す。項目は「ブロックグループの表示・非表示の設定」（`paletteVisibilityMenuLabel`）と、ホストの機能拡張に関する項目 |
 
 `./palette-visibility-dialog` の `openPaletteVisibilityDialog(document, props)` は「パレット内のブロックグループの表示・非表示の設定」の画面を開く。機能拡張の各行は `@kubohiroya/turbowarp-extension-security-dialog/react` の `ExtensionRow` で描くので、拡張の追加の画面と同じ見た目になる。適用すると、出すグループと、この画面で足したセットを `onApply` に渡す。
 
-ホストは `@kubohiroya/sb3-toolchain`（0.25.1 以上）と `@kubohiroya/turbowarp-extension-security-dialog`（0.9.0 以上）を入れ、security-dialog の `styles.css` も読み込む。1つの機能拡張の中を複数のグループに分けて選ぶ機能は、VM がグループごとのカテゴリを作れるようになってから足す。
+ホストは `@kubohiroya/turbowarp-extension-security-dialog`（0.9.0 以上）を入れ、その `styles.css` も読み込む。設定を画面状態のスライスとして登録するのはホストの役目である。1つの機能拡張の中を複数のグループに分けて選ぶ機能は、VM がグループごとのカテゴリを作れるようになってから足す。
 

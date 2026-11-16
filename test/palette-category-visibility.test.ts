@@ -1,19 +1,12 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
-import {blockPaletteCommentReference, extractBlockPalette, formatBlockPaletteComment} from '@kubohiroya/sb3-toolchain/browser';
-import {attachPaletteMenuButton, defaultVisibleGroups, filterToolboxTree, groupOfOpcode, paletteGroupSets, paletteVisibilityMenuLabel, readTargetPalette, standardGroups,
-    usedGroups, visibleGroups, writeTargetPalette} from '../dist/palette-category-visibility.js';
+import {attachPaletteMenuButton, createPaletteVisibilityStore, defaultVisibleGroups, filterToolboxTree, groupOfOpcode, paletteGroupSets,
+    paletteVisibilityMenuLabel, standardGroups, usedGroups} from '../dist/palette-category-visibility.js';
 
-function target(name, {isStage = false, opcodes = [], comments = {}} = {}) {
+function target(name, {isStage = false, opcodes = [], id = name} = {}) {
     const blocks = Object.fromEntries(opcodes.map((opcode, index) => [`b${index}`, {opcode, shadow: opcode.endsWith('_menu')}]));
-    return {
-        isStage, getName: () => name, blocks: {_blocks: blocks}, comments,
-        createComment(id, blockId, text, x, y, width, height, minimized) {
-            this.comments[id] = {id, blockId, text, x, y, width, height, minimized};
-        },
-        deleteComment(id) {delete this.comments[id];}
-    };
+    return {id, isStage, getName: () => name, blocks: {_blocks: blocks}};
 }
 
 test('blocks map to the palette groups that offer them', () => {
@@ -36,60 +29,70 @@ test('used groups count the code blocks and leave menus out', () => {
 
 test('without a setting, a target shows the standard groups and the extensions its code uses', () => {
     const cat = target('Cat', {opcodes: ['pen_clear']});
+    const store = createPaletteVisibilityStore();
     assert.deepEqual(defaultVisibleGroups(cat, ['pen', 'music']), [...standardGroups, 'pen']);
-    assert.deepEqual([...visibleGroups(cat, ['pen', 'music'])], [...standardGroups, 'pen']);
+    assert.deepEqual([...store.visible(cat, ['pen', 'music'])], [...standardGroups, 'pen']);
+    assert.equal(store.capture([cat]), undefined, 'nothing to save');
 });
 
-test('a sprite setting is written as the toolchain formats it, and read back', () => {
-    const cat = target('Cat');
-    writeTargetPalette(cat, ['events', 'control', 'pen'], {extensionIds: ['pen']});
-    const [comment] = Object.values(cat.comments);
-    assert.equal(comment.minimized, true);
-    assert.equal(comment.text, formatBlockPaletteComment(
-        {formatVersion: 1, sprites: {Cat: {groups: ['events', 'control', 'pen']}}}, {isStage: false, name: 'Cat'}));
-    assert.deepEqual(readTargetPalette(cat).groups, ['events', 'control', 'pen']);
-    assert.deepEqual([...visibleGroups(cat, ['pen'])], ['events', 'control', 'pen']);
-
-    writeTargetPalette(cat, ['motion'], {extensionIds: ['pen']});
-    assert.equal(Object.keys(cat.comments).length, 1, 'the same comment is updated');
-    assert.deepEqual(readTargetPalette(cat).groups, ['motion']);
+test('settings are kept by target, saved by sprite name, and follow a renamed sprite', () => {
+    const stage = target('Stage', {isStage: true, id: 's'});
+    let name = 'Cat';
+    const cat = {...target('Cat', {id: 'c'}), getName: () => name};
+    const store = createPaletteVisibilityStore();
+    store.set(cat, ['events', 'control', 'pen'], ['pen']);
+    store.set(stage, ['looks', 'events'], []);
+    assert.deepEqual([...store.visible(cat, ['pen'])], ['events', 'control', 'pen']);
+    name = 'Kitten';
+    assert.deepEqual(store.capture([stage, cat]), {version: 1, stage: {groups: ['looks', 'events']},
+        sprites: {Kitten: {groups: ['events', 'control', 'pen']}}});
 });
 
-test('going back to the default removes the sprite comment', () => {
+test('going back to the default forgets the setting', () => {
     const cat = target('Cat', {opcodes: ['pen_clear']});
-    writeTargetPalette(cat, ['events'], {extensionIds: ['pen']});
-    writeTargetPalette(cat, [...standardGroups, 'pen'], {extensionIds: ['pen']});
-    assert.deepEqual(cat.comments, {});
+    const store = createPaletteVisibilityStore();
+    store.set(cat, ['events'], ['pen']);
+    store.set(cat, [...standardGroups, 'pen'], ['pen']);
+    assert.equal(store.capture([cat]), undefined);
 });
 
-test('the stage keeps project sets in its comment even with default groups', () => {
-    const stage = target('Stage', {isStage: true});
-    const sets = {logic: {name: 'ロジック専用', groups: ['events', 'control', 'operators']}};
-    writeTargetPalette(stage, [...standardGroups], {sets});
-    const palette = readTargetPalette(stage);
-    assert.deepEqual(palette.sets, sets);
-    assert.equal(palette.groups, undefined);
-    assert.deepEqual(paletteGroupSets('ja', palette.sets).map(set => set.name), ['標準', '表現', '変数・リスト', '基本の制御', 'ロジック専用']);
+test('a duplicate starts with the setting of the sprite it was made from', () => {
+    const cat = target('Cat', {id: 'c'});
+    const copy = target('Cat2', {id: 'c2'});
+    const store = createPaletteVisibilityStore();
+    store.set(cat, ['events'], []);
+    store.copy(cat, copy);
+    assert.deepEqual([...store.visible(copy, [])], ['events']);
+});
+
+test('a saved slice comes back by sprite name, with the project sets', () => {
+    const stage = target('Stage', {isStage: true, id: 'new-s'});
+    const cat = target('Cat', {id: 'new-c'});
+    const dog = target('Dog', {id: 'new-d'});
+    const store = createPaletteVisibilityStore();
+    store.apply({version: 1, stage: {groups: ['looks']}, sprites: {Cat: {groups: ['events']}, Gone: {groups: ['sound']}},
+        sets: {logic: {name: 'ロジック専用', groups: ['events', 'control']}, broken: {name: 3}}}, [stage, cat, dog]);
+    assert.deepEqual([...store.visible(stage, [])], ['looks']);
+    assert.deepEqual([...store.visible(cat, [])], ['events']);
+    assert.deepEqual([...store.visible(dog, [])], [...standardGroups]);
+    assert.deepEqual(store.sets(), {logic: {name: 'ロジック専用', groups: ['events', 'control']}});
+    assert.deepEqual(paletteGroupSets('ja', store.sets()).map(set => set.name), ['標準', '表現', '変数・リスト', '基本の制御', 'ロジック専用']);
     assert.deepEqual(paletteGroupSets('en').map(set => set.name), ['Standard', 'Expression', 'Variables and lists', 'Basic control']);
+    store.addSets([{id: 'more', name: 'More', groups: ['sound']}]);
+    assert.deepEqual(store.capture([stage, cat, dog]), {version: 1, stage: {groups: ['looks']}, sprites: {Cat: {groups: ['events']}},
+        sets: {logic: {name: 'ロジック専用', groups: ['events', 'control']}, more: {name: 'More', groups: ['sound']}}});
 });
 
-test('the comments written here are the ones sb3-toolchain moves into block-palette.json', () => {
-    const stage = target('Stage', {isStage: true});
+test('a value that is not a saved slice, or a reset, leaves every target at its default', () => {
     const cat = target('Cat');
-    writeTargetPalette(stage, ['events', 'looks'], {order: ['events', 'looks']});
-    writeTargetPalette(cat, ['events', 'pen'], {extensionIds: ['pen']});
-    const project = {targets: [stage, cat].map(item => ({isStage: item.isStage, name: item.getName(), comments: structuredClone(item.comments)}))};
-    const {document, warnings} = extractBlockPalette(project);
-    assert.deepEqual(warnings, []);
-    assert.deepEqual(document, {formatVersion: 1, order: ['events', 'looks'], stage: {groups: ['events', 'looks']},
-        sprites: {Cat: {groups: ['events', 'pen']}}});
-    assert.equal(Object.values(project.targets[1].comments)[0].text, blockPaletteCommentReference);
-});
-
-test('a broken palette comment counts as no setting', () => {
-    const cat = target('Cat', {comments: {x: {text: 'header\n{not json // _twplus_palette_'}}});
-    assert.equal(readTargetPalette(cat), null);
-    assert.deepEqual([...visibleGroups(cat, [])], [...standardGroups]);
+    const store = createPaletteVisibilityStore();
+    store.set(cat, ['events'], []);
+    store.apply({version: 2, sprites: {Cat: {groups: ['looks']}}}, [cat]);
+    assert.deepEqual([...store.visible(cat, [])], [...standardGroups]);
+    store.set(cat, ['events'], []);
+    store.addSets([{id: 'x', name: 'X', groups: []}]);
+    store.reset();
+    assert.equal(store.capture([cat]), undefined);
 });
 
 test('the toolbox keeps only the categories the target shows', () => {

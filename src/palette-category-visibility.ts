@@ -1,17 +1,21 @@
-import {blockPaletteCommentMarker, formatBlockPaletteComment} from '@kubohiroya/sb3-toolchain/browser';
-import type {BlockPaletteDocument, BlockPaletteSet} from '@kubohiroya/sb3-toolchain/browser';
-
 /**
  * Which block groups the palette shows for each sprite and the stage.
  *
- * The setting lives where sb3-toolchain source format 2 keeps it: one palette comment per sprite or
- * stage (`block-palette.json` in a project folder). It changes only what the palette offers; blocks
+ * The settings belong to the editor, not to the project's code: they are kept in memory per target and saved with
+ * the editor's own screen state (a slice of `tw-plus/workspace.json` in an SB3, `.tw-plus/workspace.json` in a
+ * project folder), the same way the tab layout is. Hiding a group changes only what the palette offers; blocks
  * already in the code stay visible and editable.
  */
 
 /** The standard groups, by the palette's category IDs. `lists` is Plus's own split of `variables`. */
 export const standardGroups = ['motion', 'looks', 'sound', 'events', 'control', 'sensing', 'operators', 'variables', 'lists',
     'myBlocks'] as const;
+
+/** A named set of groups the project keeps. */
+export interface SavedGroupSet {
+    name: string;
+    groups: string[];
+}
 
 export interface PaletteGroupSet {
     id: string;
@@ -33,8 +37,8 @@ const builtinSetGroups: Record<string, readonly string[]> = {
 };
 const japanese = (locale?: string) => /^ja(?:-|$)/i.test(locale ?? '');
 
-/** The sets every project has, then the project's own sets from its stage palette comment. */
-export function paletteGroupSets(locale?: string, projectSets: Record<string, BlockPaletteSet> = {}): PaletteGroupSet[] {
+/** The sets every project has, then the project's own sets. */
+export function paletteGroupSets(locale?: string, projectSets: Record<string, SavedGroupSet> = {}): PaletteGroupSet[] {
     const builtin = Object.keys(builtinSetGroups).map(id => ({
         id, name: builtinSetNames[id][japanese(locale) ? 'ja' : 'en'], groups: builtinSetGroups[id]
     }));
@@ -56,16 +60,12 @@ export function groupOfOpcode(opcode: string): string | null {
 }
 
 type BlockLike = {opcode?: string; shadow?: boolean};
-type CommentLike = {text?: string; id?: string};
-/** The parts of a VM target this module reads and writes. */
+/** The parts of a VM target this module reads. */
 export interface PaletteTarget {
+    id: string;
     isStage: boolean;
     getName(): string;
     blocks?: {_blocks?: Record<string, BlockLike>};
-    comments: Record<string, CommentLike>;
-    createComment?(id: string, blockId: string | null, text: string, x: number, y: number, width: number, height: number,
-        minimized: boolean): void;
-    deleteComment?(id: string): void;
 }
 
 /** How many blocks of each group the target's code uses. Menus and other shadow blocks are not counted. */
@@ -79,53 +79,13 @@ export function usedGroups(target: Pick<PaletteTarget, 'blocks'>): Map<string, n
     return counts;
 }
 
-export interface TargetPalette {
-    /** The comment that holds the setting. */
-    commentId: string;
-    groups?: string[];
-    /** Present on the stage's comment only. */
-    order?: string[];
-    sets?: Record<string, BlockPaletteSet>;
-}
-
-const markedLine = (text: string) => text.split('\n').find(line => line.endsWith(blockPaletteCommentMarker));
-
-/** The palette setting a target carries in its palette comment, or null when it has none or it cannot be read. */
-export function readTargetPalette(target: Pick<PaletteTarget, 'comments'>): TargetPalette | null {
-    for (const [commentId, comment] of Object.entries(target.comments ?? {})) {
-        const line = typeof comment?.text === 'string' ? markedLine(comment.text) : undefined;
-        if (!line) continue;
-        try {
-            const value = JSON.parse(line.slice(0, -blockPaletteCommentMarker.length));
-            if (!value || typeof value !== 'object') return null;
-            const strings = (list: unknown) => Array.isArray(list) && list.every(item => typeof item === 'string') ?
-                list as string[] : undefined;
-            return {
-                commentId,
-                groups: strings(value.groups),
-                order: strings(value.order),
-                sets: value.sets && typeof value.sets === 'object' ? value.sets : undefined
-            };
-        } catch {
-            return null;
-        }
-    }
-    return null;
-}
-
 /**
  * The groups shown when a target has no setting of its own: every standard group, and the groups of
- * the extensions its code already uses, so an existing project opens with nothing missing.
+ * the extensions its code already uses, so a project opens with nothing missing.
  */
 export function defaultVisibleGroups(target: Pick<PaletteTarget, 'blocks'>, extensionIds: readonly string[]): string[] {
     const used = usedGroups(target);
     return [...standardGroups, ...extensionIds.filter(id => used.has(id))];
-}
-
-/** The groups the palette shows for the target. */
-export function visibleGroups(target: Pick<PaletteTarget, 'blocks' | 'comments'>, extensionIds: readonly string[]): Set<string> {
-    const groups = readTargetPalette(target)?.groups;
-    return new Set(groups ?? defaultVisibleGroups(target, extensionIds));
 }
 
 /** Removes the categories the target does not show from a parsed toolbox, before the palette is drawn from it. */
@@ -137,47 +97,98 @@ export function filterToolboxTree(tree: Element | null | undefined, visible: Rea
     }
 }
 
-const newCommentId = () => `twplus-palette-${Math.random().toString(36).slice(2, 10)}`;
-
-/**
- * Stores the target's palette setting in its palette comment, as sb3-toolchain source format 2 reads it.
- * A sprite whose groups equal its default gets no comment; the stage keeps one while it carries the
- * project's group order or sets.
- */
-export function writeTargetPalette(target: PaletteTarget, groups: readonly string[], {extensionIds = [], order, sets}: {
-    extensionIds?: readonly string[];
-    order?: readonly string[];
-    sets?: Record<string, BlockPaletteSet>;
-} = {}): void {
-    const current = readTargetPalette(target);
-    const name = target.getName();
-    const isDefault = sameGroups(groups, defaultVisibleGroups(target, extensionIds));
-    const projectOrder = target.isStage ? order ?? current?.order : undefined;
-    const projectSets = target.isStage ? sets ?? current?.sets : undefined;
-    const keepsProjectSettings = (projectOrder && projectOrder.length > 0) ||
-        (projectSets && Object.keys(projectSets).length > 0);
-    if (isDefault && !keepsProjectSettings) {
-        if (current) target.deleteComment?.(current.commentId);
-        return;
-    }
-    const document: BlockPaletteDocument = {formatVersion: 1};
-    if (projectOrder?.length) document.order = [...projectOrder];
-    if (projectSets && Object.keys(projectSets).length) document.sets = projectSets;
-    if (target.isStage) {
-        if (!isDefault) document.stage = {groups: [...groups]};
-    } else {
-        document.sprites = {[name]: {groups: [...groups]}};
-    }
-    const text = formatBlockPaletteComment(document, {isStage: target.isStage, name});
-    if (current) {
-        target.comments[current.commentId].text = text;
-        return;
-    }
-    target.createComment?.(newCommentId(), null, text, 0, 0, 200, 200, true);
+/** The screen-state slice the settings are saved as. Sprites are named as the tab layout names them. */
+export const paletteScreenStateKey = 'blockPalette';
+export interface SavedPaletteVisibility {
+    version: 1;
+    stage?: {groups: string[]};
+    sprites?: Record<string, {groups: string[]}>;
+    sets?: Record<string, SavedGroupSet>;
 }
 
+const strings = (value: unknown): string[] | undefined =>
+    Array.isArray(value) && value.every(item => typeof item === 'string') ? [...value] : undefined;
 const sameGroups = (left: readonly string[], right: readonly string[]) =>
     left.length === right.length && new Set(left).size === left.length && left.every(group => right.includes(group));
+
+export interface PaletteVisibilityStore {
+    /** The groups the palette shows for the target. */
+    visible(target: PaletteTarget, extensionIds: readonly string[]): Set<string>;
+    /** Keeps the target's groups. Groups equal to its default leave it without a setting of its own. */
+    set(target: PaletteTarget, groups: readonly string[], extensionIds: readonly string[]): void;
+    /** A new sprite made from another, such as a duplicate, starts with its setting. */
+    copy(from: Pick<PaletteTarget, 'id'>, to: Pick<PaletteTarget, 'id'>): void;
+    /** The project's own sets. */
+    sets(): Record<string, SavedGroupSet>;
+    addSets(sets: readonly PaletteGroupSet[]): void;
+    /** The slice to save, or nothing when no target has a setting and the project has no sets. */
+    capture(targets: readonly PaletteTarget[]): SavedPaletteVisibility | undefined;
+    /** Takes the settings of a loaded project. A value that is not a saved slice leaves every target at its default. */
+    apply(value: unknown, targets: readonly PaletteTarget[]): void;
+    /** Forgets every setting, for a project without any. */
+    reset(): void;
+}
+
+/** The settings of one project, by runtime target ID, so a renamed sprite keeps its setting. */
+export function createPaletteVisibilityStore(): PaletteVisibilityStore {
+    let groups = new Map<string, string[]>();
+    let projectSets: Record<string, SavedGroupSet> = {};
+    return {
+        visible(target, extensionIds) {
+            return new Set(groups.get(target.id) ?? defaultVisibleGroups(target, extensionIds));
+        },
+        set(target, chosen, extensionIds) {
+            if (sameGroups(chosen, defaultVisibleGroups(target, extensionIds))) groups.delete(target.id);
+            else groups.set(target.id, [...chosen]);
+        },
+        copy(from, to) {
+            const chosen = groups.get(from.id);
+            if (chosen) groups.set(to.id, [...chosen]);
+        },
+        sets: () => ({...projectSets}),
+        addSets(sets) {
+            for (const set of sets) projectSets[set.id] = {name: set.name, groups: [...set.groups]};
+        },
+        capture(targets) {
+            const saved: SavedPaletteVisibility = {version: 1};
+            const sprites: Record<string, {groups: string[]}> = {};
+            for (const target of targets) {
+                const chosen = groups.get(target.id);
+                if (!chosen) continue;
+                if (target.isStage) saved.stage = {groups: [...chosen]};
+                else sprites[target.getName()] = {groups: [...chosen]};
+            }
+            if (Object.keys(sprites).length) saved.sprites = sprites;
+            if (Object.keys(projectSets).length) saved.sets = structuredClone(projectSets);
+            return saved.stage || saved.sprites || saved.sets ? saved : undefined;
+        },
+        apply(value, targets) {
+            groups = new Map();
+            projectSets = {};
+            if (!value || typeof value !== 'object' || (value as {version?: unknown}).version !== 1) return;
+            const saved = value as Record<string, unknown>;
+            const setting = (entry: unknown) => entry && typeof entry === 'object' ?
+                strings((entry as {groups?: unknown}).groups) : undefined;
+            const sprites = saved.sprites && typeof saved.sprites === 'object' ? saved.sprites as Record<string, unknown> : {};
+            for (const target of targets) {
+                const chosen = target.isStage ? setting(saved.stage) :
+                    Object.hasOwn(sprites, target.getName()) ? setting(sprites[target.getName()]) : undefined;
+                if (chosen) groups.set(target.id, chosen);
+            }
+            if (saved.sets && typeof saved.sets === 'object') {
+                for (const [id, set] of Object.entries(saved.sets as Record<string, unknown>)) {
+                    const name = set && typeof set === 'object' ? (set as {name?: unknown}).name : undefined;
+                    const members = setting(set);
+                    if (typeof name === 'string' && members) projectSets[id] = {name, groups: members};
+                }
+            }
+        },
+        reset() {
+            groups = new Map();
+            projectSets = {};
+        }
+    };
+}
 
 /** The menu item that opens the group settings. */
 export const paletteVisibilityMenuLabel = (locale: string) => japanese(locale) ? 'ブロックグループの表示・非表示の設定' :
