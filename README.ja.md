@@ -67,7 +67,7 @@ MPL-2.0。turbowarp-plus-editor の `packages/editor-views` と `packages/editor
 | `paletteGroupSets(locale, projectSets)` | 「標準」「表現」「変数・リスト」「基本の制御」と、作品のセット |
 | `attachPaletteMenuButton(menu, getLocale, getItems)` | カテゴリの一覧の末尾（横配置では右端、縦配置では下端）に ▼ のボタンを置く。押すと、ホストが渡す項目のメニューを出す。項目は「ブロックグループの表示・非表示の設定」（`paletteVisibilityMenuLabel`）と、ホストの機能拡張に関する項目 |
 
-`./palette-visibility-dialog` の `openPaletteVisibilityDialog(document, props)` は「パレット内のブロックグループの表示・非表示の設定」の画面を開く。機能拡張の各行は `@kubohiroya/turbowarp-extension-security-dialog/react` の `ExtensionRow` で描くので、拡張の追加の画面と同じ見た目になる。適用すると、出すグループと、この画面で足したセットを `onApply` に渡す。`newSprite` を渡すと、追加したばかりのスプライトについて尋ねる画面になり、見出しの下に「新しいスプライト「名前」」と出す。
+`./palette-visibility-dialog` の `openPaletteVisibilityDialog(document, props)` は「パレット内のブロックグループの表示・非表示の設定」の画面を開く。機能拡張の各行は `@kubohiroya/turbowarp-extension-security-dialog/react` の `ExtensionRow` で描くので、拡張の追加の画面と同じ見た目になる。適用すると、出すグループと、この画面で足したセットを `onApply` に渡す。`newSprite` を渡すと、追加したばかりのスプライトについて尋ねる画面になり、見出しの下に「新しいスプライト「名前」」と出す。あわせて `copySources`（作成済みのスプライトの名前と、それぞれが表示中のグループ）を渡すと、「作成済みのスプライトからコピー」の欄に選ぶ一覧と「コピーして適用」を出す。押すと、選んだスプライトのグループのうちこのスプライトに出せるものを、そのまま `onApply` に渡して閉じる。
 
 ホストは `@kubohiroya/turbowarp-extension-security-dialog`（0.9.0 以上）を入れ、その `styles.css` も読み込む。設定を画面状態のスライスとして登録するのはホストの役目である。1つの機能拡張の中を複数のグループに分けて選ぶ機能は、VM がグループごとのカテゴリを作れるようになってから足す。
 

@@ -917,3 +917,18 @@
     outline-offset: 1px;
 }
 
+
+.tw-palette-visibility-copy {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.tw-palette-visibility select {
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--ui-black-transparent, #80808070);
+    border-radius: 0.35rem;
+    background: var(--ui-primary, Canvas);
+    color: inherit;
+    font: inherit;
+}
