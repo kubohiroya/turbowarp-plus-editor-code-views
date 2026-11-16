@@ -39,8 +39,7 @@ function open(overrides = {}) {
 test('the screen uses the agreed headings and wording', () => {
     const view = open();
     const text = view.text();
-    for (const words of ['パレット内のブロックグループの表示・非表示の設定', 'スプライト「ネコ」', '適用可能なセット',
-        '＋適用可能なセットを追加', '標準のブロックグループ', '機能拡張のブロックグループ', 'キャンセル', '適用']) {
+    for (const words of ['パレット内のブロックグループの表示・非表示の設定', 'スプライト「ネコ」',         'まとめて選ぶ', '設定のショートカット', '＋設定のショートカットを追加', '標準のブロックグループ', '機能拡張のブロックグループ', 'キャンセル', '確定']) {
         assert.ok(text.includes(words), words);
     }
     assert.ok(text.includes('使用中 2'), 'a hidden group that the code uses is marked');
@@ -56,7 +55,7 @@ test('checking groups and applying returns the shown groups in palette order', (
     view.click(view.group('motion'));
     view.click(view.group('nameddata'));
     assert.ok(!view.text().includes('非表示中・使用中'), 'nothing in use is hidden any more');
-    view.click(view.button('適用'));
+    view.click(view.button('確定'));
     assert.deepEqual(view.choice, {groups: ['looks', 'sound', 'events', 'control', 'sensing', 'operators', 'lists', 'myBlocks',
         'pen', 'nameddata'], addedSets: []});
     assert.equal(document.querySelector('dialog'), null);
@@ -77,14 +76,14 @@ test('a set switches its groups together and shows whether all of them are shown
 
 test('the current choice can be kept as a new applicable set', () => {
     const view = open();
-    view.click(view.button('＋適用可能なセットを追加'));
+    view.click(view.button('＋設定のショートカットを追加'));
     const input = view.dialog.querySelector('.tw-palette-visibility-naming input');
     const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
     setter.call(input, 'ロジック専用');
     input.dispatchEvent(new dom.window.Event('input', {bubbles: true}));
     view.click(view.button('追加'));
     assert.ok(view.text().includes('ロジック専用'));
-    view.click(view.button('適用'));
+    view.click(view.button('確定'));
     assert.equal(view.choice.addedSets.length, 1);
     assert.equal(view.choice.addedSets[0].name, 'ロジック専用');
     assert.deepEqual(view.choice.addedSets[0].groups, view.choice.groups);
@@ -109,23 +108,34 @@ test('for a new sprite the screen names it as new and offers nothing else to dec
     const view = open({newSprite: true, targetName: 'スプライト2'});
     assert.ok(view.text().includes('新しいスプライト「スプライト2」'));
     assert.equal(view.dialog.querySelectorAll('footer input').length, 0);
-    view.click(view.button('適用'));
+    view.click(view.button('確定'));
     assert.deepEqual(Object.keys(view.choice), ['groups', 'addedSets']);
 });
 
-test('a new sprite can copy the groups an existing sprite shows and apply them at once', () => {
+test('a new sprite copies the groups an existing sprite shows into its choices, which are adjusted and applied', () => {
     const view = open({newSprite: true, targetName: 'スプライト3', copySources: [
         {name: 'スプライト1', groups: ['events', 'control', 'pen']},
         {name: 'スプライト2', groups: ['looks', 'nameddata', 'unknownExt']}
     ]});
-    assert.ok(view.text().includes('作成済みのスプライトからコピー'));
+    assert.ok(view.text().includes('設定のコピー元'));
     const select = view.dialog.querySelector('.tw-palette-visibility-copy select');
-    assert.deepEqual([...select.options].map(option => option.textContent), ['スプライト1', 'スプライト2']);
+    assert.deepEqual([...select.options].map(option => option.textContent), ['スプライトを選ぶ', 'スプライト1', 'スプライト2']);
     const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set;
     setter.call(select, '1');
     select.dispatchEvent(new dom.window.Event('change', {bubbles: true}));
-    view.click(view.button('コピーして適用'));
-    assert.deepEqual(view.choice, {groups: ['looks', 'nameddata'], addedSets: []});
+    view.click(view.button('コピー'));
+    // The copy is shown and nothing is applied yet.
+    assert.notEqual(document.querySelector('dialog'), null);
+    assert.equal(view.choice, undefined);
+    assert.equal(view.group('looks').checked, true);
+    assert.equal(view.group('nameddata').checked, true);
+    assert.equal(view.group('events').checked, false);
+    assert.equal(view.group('pen').checked, false);
+    // The person adds and removes checks, then applies.
+    view.click(view.group('events'));
+    view.click(view.group('nameddata'));
+    view.click(view.button('確定'));
+    assert.deepEqual(view.choice, {groups: ['looks', 'events'], addedSets: []});
     assert.equal(document.querySelector('dialog'), null);
 });
 
@@ -136,4 +146,56 @@ test('the copy choice is offered only for a new sprite with other sprites to cop
     const ordinary = open({copySources: [{name: 'スプライト1', groups: ['events']}]});
     assert.equal(ordinary.dialog.querySelector('.tw-palette-visibility-copy'), null);
     ordinary.close();
+});
+
+test('pointing at a shortcut or the copy source marks the groups it would choose', () => {
+    const view = open({newSprite: true, copySources: [{name: 'スプライト1', groups: ['events', 'pen']}]});
+    const marked = () => [...view.dialog.querySelectorAll('[data-highlighted]')].map(element => element.getAttribute('data-group'));
+    const enter = element => element.dispatchEvent(new dom.window.MouseEvent('mouseover', {bubbles: true, relatedTarget: document.body}));
+    const leave = element => element.dispatchEvent(new dom.window.MouseEvent('mouseout', {bubbles: true, relatedTarget: document.body}));
+    assert.deepEqual(marked(), []);
+    enter(view.set('data'));
+    assert.deepEqual(marked(), ['variables', 'lists']);
+    leave(view.set('data'));
+    assert.deepEqual(marked(), []);
+    const copyPanel = view.dialog.querySelector('[aria-label="設定のコピー元"][role="group"]');
+    enter(copyPanel);
+    assert.deepEqual(marked(), [], 'no copy source is chosen yet');
+    leave(copyPanel);
+    // The two ways to choose sit side by side.
+    assert.equal(view.dialog.querySelector('.tw-palette-visibility-quick').getAttribute('data-columns'), '2');
+    view.close();
+    const single = open();
+    assert.equal(single.dialog.querySelector('.tw-palette-visibility-quick').getAttribute('data-columns'), '1');
+    single.close();
+});
+
+test('while a copy source is chosen, the groups it would choose stay marked', () => {
+    const view = open({newSprite: true, copySources: [{name: 'スプライト1', groups: ['events', 'pen']},
+        {name: 'スプライト2', groups: ['looks']}]});
+    const marked = () => [...view.dialog.querySelectorAll('[data-highlighted]')].map(element => element.getAttribute('data-group'));
+    const select = view.dialog.querySelector('.tw-palette-visibility-copy select');
+    const copy = view.button('コピー');
+    const choose = value => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set.call(select, value);
+        select.dispatchEvent(new dom.window.Event('change', {bubbles: true}));
+    };
+    assert.equal(select.value, '');
+    assert.equal(copy.disabled, true);
+    assert.deepEqual(marked(), []);
+    choose('0');
+    assert.deepEqual(marked(), ['events', 'pen']);
+    assert.equal(copy.disabled, false);
+    // A shortcut under the pointer shows its own groups, and the chosen source comes back after.
+    const enter = element => element.dispatchEvent(new dom.window.MouseEvent('mouseover', {bubbles: true, relatedTarget: document.body}));
+    const leave = element => element.dispatchEvent(new dom.window.MouseEvent('mouseout', {bubbles: true, relatedTarget: document.body}));
+    enter(view.set('data'));
+    assert.deepEqual(marked(), ['variables', 'lists']);
+    leave(view.set('data'));
+    assert.deepEqual(marked(), ['events', 'pen']);
+    choose('1');
+    assert.deepEqual(marked(), ['looks']);
+    choose('');
+    assert.deepEqual(marked(), []);
+    view.close();
 });

@@ -932,3 +932,39 @@
     color: inherit;
     font: inherit;
 }
+
+/* 「まとめて選ぶ」: the shortcuts and the copy source side by side, as two ways to make the same choice. */
+.tw-palette-visibility-quick {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.6rem;
+}
+
+.tw-palette-visibility-quick[data-columns="2"] {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+.tw-palette-visibility-panel {
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--ui-black-transparent, #80808040);
+    border-radius: 0.45rem;
+}
+
+.tw-palette-visibility-panel h4 {
+    margin: 0 0 0.45rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+/* A group under the pointer, and the groups a shortcut or copy source under the pointer would choose. */
+.tw-palette-visibility-standard label {
+    padding: 0.15rem 0.3rem;
+    border-radius: 0.3rem;
+}
+
+.tw-palette-visibility-standard label:hover,
+.tw-palette-visibility-standard label[data-highlighted],
+.tw-palette-visibility .twextsec-row:hover,
+.tw-palette-visibility .twextsec-row[data-highlighted] {
+    background: color-mix(in srgb, var(--looks-secondary, #7951d1) 16%, transparent);
+}

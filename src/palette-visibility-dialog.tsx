@@ -32,7 +32,7 @@ export interface PaletteVisibilityDialogProps {
     newSprite?: boolean;
     /**
      * For a new sprite: the sprites already in the project with the groups each shows. The screen offers to copy
-     * one of them and apply it at once.
+     * one of them into its choices, which the person then adjusts and applies.
      */
     copySources?: readonly {name: string; groups: readonly string[]}[];
     onApply(choice: PaletteVisibilityChoice): void;
@@ -53,18 +53,18 @@ const messages = {
     en: {
         title: 'Block groups shown in the palette', sprite: (name: string) => `Sprite “${name}”`, stage: 'Stage',
         newSprite: (name: string) => `New sprite “${name}”`,
-        copyFrom: 'Copy from an existing sprite', copyApply: 'Copy and apply',
-        sets: 'Applicable sets', addSet: 'Add applicable set', setName: 'Set name', add: 'Add',
+        quick: 'Choose several at once', copyFrom: 'Copy settings from', copy: 'Copy', chooseSprite: 'Choose a sprite',
+        sets: 'Setting shortcuts', addSet: 'Add setting shortcut', setName: 'Shortcut name', add: 'Add',
         standard: 'Standard block groups', extensions: 'Extension block groups', used: (count: number) => `In use ${count}`,
-        hiddenInUse: (count: number) => `Hidden and in use: ${count}`, cancel: 'Cancel', apply: 'Apply', close: 'Close'
+        hiddenInUse: (count: number) => `Hidden and in use: ${count}`, cancel: 'Cancel', confirm: 'Confirm', close: 'Close'
     },
     ja: {
         title: 'パレット内のブロックグループの表示・非表示の設定', sprite: (name: string) => `スプライト「${name}」`, stage: '背景',
         newSprite: (name: string) => `新しいスプライト「${name}」`,
-        copyFrom: '作成済みのスプライトからコピー', copyApply: 'コピーして適用',
-        sets: '適用可能なセット', addSet: '適用可能なセットを追加', setName: 'セットの名前', add: '追加',
+        quick: 'まとめて選ぶ', copyFrom: '設定のコピー元', copy: 'コピー', chooseSprite: 'スプライトを選ぶ',
+        sets: '設定のショートカット', addSet: '設定のショートカットを追加', setName: 'ショートカットの名前', add: '追加',
         standard: '標準のブロックグループ', extensions: '機能拡張のブロックグループ', used: (count: number) => `使用中 ${count}`,
-        hiddenInUse: (count: number) => `非表示中・使用中 ${count} 件`, cancel: 'キャンセル', apply: '適用', close: '閉じる'
+        hiddenInUse: (count: number) => `非表示中・使用中 ${count} 件`, cancel: 'キャンセル', confirm: '確定', close: '閉じる'
     }
 };
 const isJapanese = (locale?: string) => /^ja(?:-|$)/i.test(locale ?? '');
@@ -74,7 +74,10 @@ interface DialogState {
     addedSets: PaletteGroupSet[];
     naming: boolean;
     setName: string;
-    copySource: number;
+    /** The sprite chosen to copy from, or null before one is chosen. */
+    copySource: number | null;
+    /** The groups a shortcut or a copy source under the pointer or focus would choose, shown in the lists. */
+    highlight: Set<string> | null;
 }
 
 /**
@@ -85,7 +88,7 @@ interface DialogState {
 export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibilityDialogProps, DialogState> {
     constructor(props: PaletteVisibilityDialogProps) {
         super(props);
-        this.state = {shown: new Set(props.initial), addedSets: [], naming: false, setName: '', copySource: 0};
+        this.state = {shown: new Set(props.initial), addedSets: [], naming: false, setName: '', copySource: null, highlight: null};
     }
     get text() {
         return isJapanese(this.props.locale) ? messages.ja : messages.en;
@@ -128,13 +131,18 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
             .filter(group => this.state.shown.has(group));
         this.setState(({addedSets}) => ({addedSets: [...addedSets, {id, name, groups}], naming: false, setName: ''}));
     }
-    /** Apply the groups another sprite shows, as far as this one is offered them. */
-    copyAndApply() {
-        const source = this.props.copySources?.[this.state.copySource];
-        if (!source) return;
-        const order = [...this.standard(), ...this.props.extensions.map(extension => extension.id)];
-        const groups = new Set(source.groups);
-        this.props.onApply({groups: order.filter(group => groups.has(group)), addedSets: this.state.addedSets});
+    /**
+     * Choose the groups another sprite shows, as far as this one is offered them. The screen stays open, so the
+     * person sees the copy, adds or removes checks, and applies.
+     */
+    copy() {
+        if (this.state.copySource === null || !this.props.copySources?.[this.state.copySource]) return;
+        this.setState({shown: new Set(this.copyGroups())});
+    }
+    /** The groups of the chosen copy source this sprite can show, or none before one is chosen. */
+    copyGroups() {
+        const source = this.state.copySource === null ? undefined : this.props.copySources?.[this.state.copySource];
+        return source ? this.available(source.groups) : [];
     }
     apply() {
         const order = [...this.standard(), ...this.props.extensions.map(extension => extension.id)];
@@ -147,6 +155,17 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
         const names = isJapanese(locale) ? standardNames.ja : standardNames.en;
         const sets = [...this.props.sets, ...this.state.addedSets];
         const hiddenInUse = [...used].filter(([group, count]) => count > 0 && !shown.has(group)).length;
+        // Under the pointer or focus first; otherwise, while a copy source is chosen, the groups it would choose.
+        const highlight = this.state.highlight ?? (this.state.copySource !== null ? new Set(this.copyGroups()) : null);
+        const highlighted = (group: string) => highlight?.has(group) ? 'true' : undefined;
+        // Pointing at or focusing a shortcut or the copy source marks the groups it would choose, as hovering them does.
+        const highlighting = (groups: readonly string[]) => {
+            const on = () => this.setState({highlight: new Set(groups)});
+            const off = () => this.setState({highlight: null});
+            return {onMouseEnter: on, onMouseLeave: off, onFocus: on, onBlur: off};
+        };
+        const copying = Boolean(this.props.newSprite && this.props.copySources?.length);
+        const copyGroups = copying ? this.copyGroups() : [];
         const usedBadge = (group: string) => !shown.has(group) && (used.get(group) ?? 0) > 0 && (
             <span className="tw-palette-visibility-used">{text.used(used.get(group)!)}</span>
         );
@@ -160,43 +179,55 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                     <button type="button" className="tw-palette-visibility-close" aria-label={text.close} title={text.close}
                         onClick={onCancel}>×</button>
                 </header>
-                {this.props.newSprite && (this.props.copySources?.length ?? 0) > 0 && (
-                    <section aria-label={text.copyFrom}>
-                        <h3>{text.copyFrom}</h3>
-                        <div className="tw-palette-visibility-copy">
-                            <select aria-label={text.copyFrom} value={this.state.copySource}
-                                onChange={event => this.setState({copySource: Number(event.currentTarget.value)})}>
-                                {this.props.copySources.map((source, index) => (
-                                    <option key={index} value={index}>{source.name}</option>
-                                ))}
-                            </select>
-                            <button type="button" className="tw-palette-visibility-copy-apply"
-                                onClick={() => this.copyAndApply()}>{text.copyApply}</button>
+                <section aria-label={text.quick}>
+                    <h3>{text.quick}</h3>
+                    <div className="tw-palette-visibility-quick" data-columns={copying ? '2' : '1'}>
+                        <div className="tw-palette-visibility-panel" aria-label={text.sets} role="group">
+                            <h4>{text.sets}</h4>
+                            <div className="tw-palette-visibility-sets">
+                                {sets.map(set => {
+                                    const groups = this.available(set.groups);
+                                    const all = groups.length > 0 && groups.every(group => shown.has(group));
+                                    return (
+                                        <button key={set.id} type="button" aria-pressed={all} data-set={set.id}
+                                            {...highlighting(groups)}
+                                            onClick={() => this.toggleSet(set)}>{set.name}{all ? ' ✓' : ''}</button>
+                                    );
+                                })}
+                                {naming ? (
+                                    <span className="tw-palette-visibility-naming">
+                                        <input type="text" aria-label={text.setName} placeholder={text.setName} value={setName}
+                                            autoFocus
+                                            onChange={event => this.setState({setName: event.currentTarget.value})}
+                                            onKeyDown={event => {if (event.key === 'Enter') this.addSet();}} />
+                                        <button type="button" onClick={() => this.addSet()}>{text.add}</button>
+                                    </span>
+                                ) : (
+                                    <button type="button" className="tw-palette-visibility-add-set"
+                                        onClick={() => this.setState({naming: true})}>＋{text.addSet}</button>
+                                )}
+                            </div>
                         </div>
-                    </section>
-                )}
-                <section aria-label={text.sets}>
-                    <h3>{text.sets}</h3>
-                    <div className="tw-palette-visibility-sets">
-                        {sets.map(set => {
-                            const groups = this.available(set.groups);
-                            const all = groups.length > 0 && groups.every(group => shown.has(group));
-                            return (
-                                <button key={set.id} type="button" aria-pressed={all} data-set={set.id}
-                                    onClick={() => this.toggleSet(set)}>{set.name}{all ? ' ✓' : ''}</button>
-                            );
-                        })}
-                        {naming ? (
-                            <span className="tw-palette-visibility-naming">
-                                <input type="text" aria-label={text.setName} placeholder={text.setName} value={setName}
-                                    autoFocus
-                                    onChange={event => this.setState({setName: event.currentTarget.value})}
-                                    onKeyDown={event => {if (event.key === 'Enter') this.addSet();}} />
-                                <button type="button" onClick={() => this.addSet()}>{text.add}</button>
-                            </span>
-                        ) : (
-                            <button type="button" className="tw-palette-visibility-add-set"
-                                onClick={() => this.setState({naming: true})}>＋{text.addSet}</button>
+                        {copying && (
+                            <div className="tw-palette-visibility-panel" aria-label={text.copyFrom} role="group"
+                                {...highlighting(copyGroups)}>
+                                <h4>{text.copyFrom}</h4>
+                                <div className="tw-palette-visibility-copy">
+                                    <select aria-label={text.copyFrom} value={this.state.copySource ?? ''}
+                                        onChange={event => {
+                                            const value = event.currentTarget.value;
+                                            this.setState({copySource: value === '' ? null : Number(value), highlight: null});
+                                        }}>
+                                        <option value="">{text.chooseSprite}</option>
+                                        {this.props.copySources.map((source, index) => (
+                                            <option key={index} value={index}>{source.name}</option>
+                                        ))}
+                                    </select>
+                                    <button type="button" className="tw-palette-visibility-copy-button"
+                                        disabled={this.state.copySource === null}
+                                        onClick={() => this.copy()}>{text.copy}</button>
+                                </div>
+                            </div>
                         )}
                     </div>
                 </section>
@@ -204,7 +235,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                     <h3>{text.standard}</h3>
                     <div className="tw-palette-visibility-standard">
                         {this.standard().map(group => (
-                            <label key={group} data-group={group}>
+                            <label key={group} data-group={group} data-highlighted={highlighted(group)}>
                                 <input type="checkbox" checked={shown.has(group)} onChange={() => this.toggle(group)} />
                                 <span className="tw-palette-visibility-swatch" style={{color: standardColors[group]}}
                                     aria-hidden="true">●</span>
@@ -225,7 +256,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                                         metadata={extension.metadata}
                                         ids={[extension.id]}
                                         locale={locale}
-                                        itemProps={{'data-group': extension.id}}
+                                        itemProps={{'data-group': extension.id, 'data-highlighted': highlighted(extension.id)}}
                                         pick={{checked: shown.has(extension.id), onToggle: () => this.toggle(extension.id)}}
                                     >
                                         {usedBadge(extension.id)}
@@ -240,7 +271,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                     <span>
                         <button type="button" onClick={onCancel}>{text.cancel}</button>
                         <button type="button" className="tw-palette-visibility-apply" onClick={() => this.apply()}>
-                            {text.apply}
+                            {text.confirm}
                         </button>
                     </span>
                 </footer>
