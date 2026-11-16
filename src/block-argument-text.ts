@@ -5,6 +5,10 @@
  * The vertical renderer sets `MAX_DISPLAY_LENGTH` to Infinity, so a text argument draws every
  * character and the block grows until it covers its neighbours. This caps what a text argument
  * shows, and edits a value that no longer fits in a dialog instead of the one-line inline editor.
+ *
+ * A line break cannot be typed into the inline editor, which is a one-line `<input>` where Enter
+ * finishes the edit. Shift+Enter there finishes the inline edit as Enter would, then continues in
+ * the dialog with a line break at the caret. The block shows a value up to its first line break.
  */
 
 /** Display budget in half-width columns. A wide character, such as a kanji, takes two. */
@@ -53,10 +57,11 @@ const text = (locale: string) => /^ja(?:-|$)/i.test(locale) ? {
  * @param {string} value The current value.
  * @param {string} locale The editor's language.
  * @param {(value: string) => void} save Called with the edited value when the dialog is saved.
+ * @param {number} [caret] Where the caret starts, in UTF-16 units; the end of the value by default.
  * @returns {HTMLDialogElement} The open dialog.
  */
 export const openArgumentTextDialog = (document: Document, value: string, locale: string,
-    save: (value: string) => void) => {
+    save: (value: string) => void, caret = value.length) => {
     const labels = text(locale);
     const dialog = document.createElement('dialog');
     dialog.className = 'twPlusArgumentTextDialog';
@@ -111,9 +116,19 @@ export const openArgumentTextDialog = (document: Document, value: string, locale
     document.body.append(dialog);
     dialog.showModal();
     area.focus();
-    area.setSelectionRange(area.value.length, area.value.length);
+    const at = Math.max(0, Math.min(caret, area.value.length));
+    area.setSelectionRange(at, at);
     return dialog;
 };
+
+/**
+ * True for Shift+Enter alone, outside an IME composition.
+ * @param {KeyboardEvent} event The keydown.
+ * @returns {boolean} Whether the key asks for a line break.
+ */
+export const isLineBreakKey = (event?: Partial<KeyboardEvent> | null) => !!event &&
+    (event.key === 'Enter' || event.keyCode === 13) && !!event.shiftKey &&
+    !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing && event.keyCode !== 229;
 
 const installed = new WeakSet<object>();
 
@@ -129,7 +144,7 @@ export const installBlockArgumentText = ScratchBlocks => {
     if (!field?.showEditor_ || !field.getDisplayText_ || installed.has(field)) return;
     installed.add(field);
 
-    const {getDisplayText_: displayText, showEditor_: showEditor} = field;
+    const {getDisplayText_: displayText, showEditor_: showEditor, onHtmlInputKeyDown_: keyDown} = field;
     field.getDisplayText_ = function (...args) {
         const value = this.text_;
         const cut = typeof value === 'string' ? argumentTextCut(value) : undefined;
@@ -152,21 +167,52 @@ export const installBlockArgumentText = ScratchBlocks => {
         }
         ScratchBlocks.WidgetDiv?.hide?.();
         ScratchBlocks.DropDownDiv?.hideWithoutAnimation?.();
+        openDialog(this, document, this.text_);
+    };
+
+    /**
+     * Edit a plain text field's value in the dialog and apply what is saved there.
+     * @param {object} self The field.
+     * @param {Document} document The editor's document.
+     * @param {string} value The value the dialog starts with.
+     * @param {number} [caret] Where the caret starts.
+     */
+    const openDialog = (self, document: Document, value: string, caret?: number) => {
+        const block = self.sourceBlock_;
         const locale = ScratchBlocks.ScratchMsgs?.currentLocale_ ?? document.documentElement.lang ?? 'en';
-        openArgumentTextDialog(document, this.text_, locale, value => {
-            if (this.sourceBlock_ !== block || !block.workspace) return;
-            const validated = this.callValidator(value);
+        openArgumentTextDialog(document, value, locale, next => {
+            if (self.sourceBlock_ !== block || !block?.workspace) return;
+            const validated = self.callValidator(next);
             if (validated === null) return;
             const events = ScratchBlocks.Events;
             events?.setGroup?.(true);
             try {
                 // Same path as the inline editor's save: one change event, then the render.
-                this.setText(validated);
-                this.onFinishEditing_?.(validated);
+                self.setText(validated);
+                self.onFinishEditing_?.(validated);
             } finally {
                 events?.setGroup?.(false);
             }
             if (block.rendered) block.render();
-        });
+        }, caret);
+    };
+
+    if (!keyDown) return;
+    field.onHtmlInputKeyDown_ = function (event, ...rest) {
+        const input: HTMLInputElement | null | undefined = FieldTextInput.htmlInput_;
+        const document = input?.ownerDocument;
+        if (!isLineBreakKey(event) || Object.getPrototypeOf(this) !== field || this.restrictor_ ||
+            !input || input.readOnly || !document) {
+            return keyDown.call(this, event, ...rest);
+        }
+        event.preventDefault?.();
+        const {value} = input;
+        const start = input.selectionStart ?? value.length;
+        const end = input.selectionEnd ?? start;
+        const next = `${value.slice(0, start)}\n${value.slice(end)}`;
+        // Finish the inline edit as Enter does, so the dialog edits a saved value.
+        ScratchBlocks.WidgetDiv?.hide?.();
+        ScratchBlocks.DropDownDiv?.hideWithoutAnimation?.();
+        if (this.sourceBlock_?.workspace) openDialog(this, document, next, start + 1);
     };
 };

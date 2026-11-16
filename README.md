@@ -18,7 +18,7 @@ The code views of TurboWarp Plus Editor: code in tabs and windows that share one
 | `./detached-block-palette` | The block palette in its own window |
 | `./palette-category-visibility`, `./palette-visibility-dialog` | Choose which block groups the palette shows for each sprite and the stage. The setting is saved with the editor's screen state, with a screen to choose |
 | `./palette-category-reorder`, `./palette-category-search`, `./palette-dropdown-resize` | Reordering and searching palette categories, and resizing palette dropdowns |
-| `./block-argument-text` | Shortens long text arguments and edits them in a dialog |
+| `./block-argument-text` | Shortens long text arguments and edits them in a dialog. Shift+Enter in a text argument continues in the dialog with a line break |
 | `./block-number-input` | Converts full-width digits and signs typed into number arguments to half-width |
 | `./asset-edit-session`, `./dockview-unsaved` | The asset edit session and the unsaved marks on Dockview tabs, which the host connects to the GUI's editors and layout |
 | `./styles.css` | The stylesheet for all of the above |
