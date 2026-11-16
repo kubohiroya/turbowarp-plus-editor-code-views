@@ -60,14 +60,38 @@ MPL-2.0。turbowarp-plus-editor の `packages/editor-views` と `packages/editor
 
 | 関数 | 内容 |
 | --- | --- |
-| `createPaletteVisibilityStore()` | 1つの作品の設定を、実行時の対象の ID ごとに持つ。名前を変えたスプライトも設定を保つ。`visible`・`set`・`copy`（複製）・`sets`・`addSets`、画面状態のスライスへの `capture(targets)` と `apply(value, targets)`、`reset` |
+| `createPaletteVisibilityStore({catalog})` | 1つの作品の設定を、実行時の対象の ID ごとに持つ。名前を変えたスプライトも設定を保つ。`visible`・`set`・`copy`（複製）・`sets`・`addSets`、画面状態のスライスへの `capture(targets)` と `apply(value, targets)`、`reset` |
 | `paletteScreenStateKey` | 画面状態のスライスの名前（`blockPalette`） |
-| `filterToolboxTree(tree, visible)` | パレットを描く前のツールボックスの木から、出さないカテゴリを外す |
-| `usedGroups(target)`・`groupOfOpcode(opcode)`・`defaultVisibleGroups(target, extensionIds)` | コードが使っているグループとその数、設定のない対象に出すグループ |
+| `filterToolboxTree(tree, visible, catalog)` | パレットを描く前のツールボックスの木から、出さないカテゴリを外す。カタログを渡すと、グループを宣言した機能拡張を先にグループごとのカテゴリに分ける（`splitExtensionCategories`） |
+| `installExtensionPaletteGroups(runtime)`・`extensionPaletteCatalog(runtime._blockInfo)` | 機能拡張が宣言したグループを VM のカテゴリ情報に残し、読み込み済みの機能拡張のグループと、各ブロックの属するグループを一覧にする |
+| `usedGroups(target, catalog)`・`groupOfOpcode(opcode, catalog)`・`defaultVisibleGroups(target, extensionGroups, catalog)` | コードが使っているグループとその数、設定のない対象に出すグループ |
 | `paletteGroupSets(locale, projectSets)` | 「標準」「表現」「変数・リスト」「基本の制御」と、作品のセット |
 | `attachPaletteMenuButton(menu, getLocale, getItems)` | カテゴリの一覧の末尾（横配置では右端、縦配置では下端）に ▼ のボタンを置く。押すと、ホストが渡す項目のメニューを出す。項目は「ブロックグループの表示・非表示の設定」（`paletteVisibilityMenuLabel`）と、ホストの機能拡張に関する項目 |
 
 `./palette-visibility-dialog` の `openPaletteVisibilityDialog(document, props)` は「パレット内のブロックグループの表示・非表示の設定」の画面を開く。機能拡張の各行は `@kubohiroya/turbowarp-extension-security-dialog/react` の `ExtensionRow` で描くので、拡張の追加の画面と同じ見た目になる。画面は、「まとめて選ぶ」の欄に「設定のショートカット」（「標準」「表現」などのセット）と「設定のコピー元」を左右に並べ、その下に標準と機能拡張のブロックグループのチェックを並べる。ショートカットやコピー元にポインターを重ねるかフォーカスすると、それが選ぶグループのチェックが、そのチェックにポインターを重ねたときと同じ背景になる。「確定」を押すと、出すグループと、この画面で足したショートカットを `onApply` に渡して閉じる。`newSprite` を渡すと、追加したばかりのスプライトについて尋ねる画面になり、見出しの下に「新しいスプライト「名前」」と出す。あわせて `copySources`（作成済みのスプライトの名前と、それぞれが表示中のグループ）を渡すと、「設定のコピー元」に選ぶ一覧と「コピー」を出す。一覧は「スプライトを選ぶ」から始まり、スプライトを選んでいる間は、それが選ぶグループのチェックを強調したままにする。「コピー」を押すと、選んだスプライトのグループのうちこのスプライトに出せるものを、画面のチェックに写す。画面は閉じないので、利用者はチェックを足したり外したりしてから「確定」を押す。
 
-ホストは `@kubohiroya/turbowarp-extension-security-dialog`（0.9.0 以上）を入れ、その `styles.css` も読み込む。設定を画面状態のスライスとして登録するのはホストの役目である。1つの機能拡張の中を複数のグループに分けて選ぶ機能は、VM がグループごとのカテゴリを作れるようになってから足す。
+ホストは `@kubohiroya/turbowarp-extension-security-dialog`（0.9.0 以上）を入れ、その `styles.css` も読み込む。設定を画面状態のスライスとして登録するのはホストの役目である。
+
+### 1つの機能拡張の中のグループ
+
+機能拡張は、ブロックをいくつかのグループに分け、グループごとに表示・非表示を選べるようにできる。`getInfo()` にグループを宣言し、各ブロックに `paletteGroup` を付ける。
+
+```js
+getInfo() {
+    return {
+        id: 'shapes', name: 'Shapes', color1: '#0fbd8c',
+        groups: [{id: 'geometry', name: '図形', color1: '#ff8c1a', color2: '#db6e00', color3: '#c26200'}, {id: 'text', name: '文字'}],
+        blocks: [
+            {opcode: 'circle', blockType: 'command', text: 'circle', paletteGroup: 'geometry'},
+            {opcode: 'write', blockType: 'command', text: 'write [TEXT]', paletteGroup: 'text', arguments: {/* ... */}},
+            {opcode: 'reset', blockType: 'command', text: 'reset'}
+        ]
+    };
+}
+```
+
+- 各グループはパレットのカテゴリ `shapes/geometry` になり、名前はグループの名前になる。設定もこの ID で記録する。`paletteGroup` のないブロック（宣言していないグループを指すものを含む）は、カテゴリ `shapes` に残る。
+- グループの `color1`・`color2`・`color3`・`menuIconURI` は省略でき、省略すると機能拡張のものを使う。ブロック自身の色はグループの色より優先する。
+- 見出し・区切り・ボタンは、その次のブロックと同じグループに入る。オペコードは `shapes_circle` などのまま変わらないので、SB3 は変わらない。標準の TurboWarp と Scratch は `groups` と `paletteGroup` を無視し、1つのカテゴリとして表示する。
+- ホストは、機能拡張を読み込む前に `installExtensionPaletteGroups(vm.runtime)` を呼び、`extensionPaletteCatalog(vm.runtime._blockInfo)` をストア、`filterToolboxTree`、`usedGroups` に渡す。設定の画面には、そのような機能拡張の項目の `groups` としてグループを渡す。画面は機能拡張の行の中に、グループごとのチェックを出す。
 

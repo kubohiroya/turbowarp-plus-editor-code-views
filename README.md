@@ -60,14 +60,38 @@ Each sprite and the stage can choose which block groups the palette shows: the s
 
 | Function | What it does |
 | --- | --- |
-| `createPaletteVisibilityStore()` | One project's settings, by runtime target ID, so a renamed sprite keeps its setting: `visible`, `set`, `copy` (for a duplicate), `sets`, `addSets`, `capture(targets)` and `apply(value, targets)` for the screen-state slice, and `reset` |
+| `createPaletteVisibilityStore({catalog})` | One project's settings, by runtime target ID, so a renamed sprite keeps its setting: `visible`, `set`, `copy` (for a duplicate), `sets`, `addSets`, `capture(targets)` and `apply(value, targets)` for the screen-state slice, and `reset` |
 | `paletteScreenStateKey` | The name of the screen-state slice (`blockPalette`) |
-| `filterToolboxTree(tree, visible)` | Removes the categories a target does not show from the parsed toolbox before the palette is drawn |
-| `usedGroups(target)`, `groupOfOpcode(opcode)`, `defaultVisibleGroups(target, extensionIds)` | The groups the code uses and how many blocks of each, and the groups shown for a target without a setting |
+| `filterToolboxTree(tree, visible, catalog)` | Removes the categories a target does not show from the parsed toolbox before the palette is drawn. With a catalog, an extension that declares groups is first split into one category per group (`splitExtensionCategories`) |
+| `installExtensionPaletteGroups(runtime)`, `extensionPaletteCatalog(runtime._blockInfo)` | Keep the groups each extension declares on the VM's category info, and list the groups of the loaded extensions with the group of each block |
+| `usedGroups(target, catalog)`, `groupOfOpcode(opcode, catalog)`, `defaultVisibleGroups(target, extensionGroups, catalog)` | The groups the code uses and how many blocks of each, and the groups shown for a target without a setting |
 | `paletteGroupSets(locale, projectSets)` | Standard, Expression, Variables and lists, Basic control, and the project's own sets |
 | `attachPaletteMenuButton(menu, getLocale, getItems)` | Puts a ▼ button at the end of the category menu (the right end of a horizontal palette, the bottom of a vertical one). Pressing it lists the items the host gives: the group settings (`paletteVisibilityMenuLabel`) and the host's extension items |
 
 `openPaletteVisibilityDialog(document, props)` from `./palette-visibility-dialog` opens the screen that chooses the groups. Each extension is drawn with `ExtensionRow` from `@kubohiroya/turbowarp-extension-security-dialog/react`, so it looks the same as in the screen that adds extensions. The screen puts “Setting shortcuts” (sets such as Standard and Expression) and “Copy settings from” side by side under “Choose several at once”, above the checkboxes of the standard and extension block groups. Pointing at or focusing a shortcut or the copy source gives the checkboxes it would choose the same background as pointing at them. Confirm passes the groups to show, and the shortcuts added in the screen, to `onApply` and closes. With `newSprite`, the screen asks about a sprite just added and names it as a new sprite. Given `copySources` too (the sprites already in the project, each with the groups it shows), “Copy settings from” offers a list to choose one, starting at “Choose a sprite”, and “Copy”. While a sprite is chosen, the checkboxes it would choose stay marked. “Copy” checks that sprite's groups, as far as this sprite is offered them. The screen stays open; the person adds or removes checks and presses Confirm.
 
-The host installs `@kubohiroya/turbowarp-extension-security-dialog` (0.9.0 or later) and loads its `styles.css`, and registers the store as a screen-state slice. Choosing groups inside one extension comes once the VM can make a category per group.
+The host installs `@kubohiroya/turbowarp-extension-security-dialog` (0.9.0 or later) and loads its `styles.css`, and registers the store as a screen-state slice.
+
+### Groups inside one extension
+
+An extension can split its blocks into groups that are shown and hidden on their own. It declares them in `getInfo()` and marks each block with `paletteGroup`:
+
+```js
+getInfo() {
+    return {
+        id: 'shapes', name: 'Shapes', color1: '#0fbd8c',
+        groups: [{id: 'geometry', name: 'Geometry', color1: '#ff8c1a', color2: '#db6e00', color3: '#c26200'}, {id: 'text', name: 'Text'}],
+        blocks: [
+            {opcode: 'circle', blockType: 'command', text: 'circle', paletteGroup: 'geometry'},
+            {opcode: 'write', blockType: 'command', text: 'write [TEXT]', paletteGroup: 'text', arguments: {/* ... */}},
+            {opcode: 'reset', blockType: 'command', text: 'reset'}
+        ]
+    };
+}
+```
+
+- Each group is the palette category `shapes/geometry`, named after the group, and the settings name it by that ID. Blocks without `paletteGroup` (or naming a group not declared) stay in the category `shapes`.
+- `color1`, `color2`, `color3` and `menuIconURI` of a group are optional, and default to the extension's. A block's own colour wins over its group's.
+- A label, separator or button goes with the block after it. The opcodes stay `shapes_circle` and so on, so the SB3 does not change: standard TurboWarp and Scratch ignore `groups` and `paletteGroup` and show one category.
+- The host calls `installExtensionPaletteGroups(vm.runtime)` before extensions load, and passes `extensionPaletteCatalog(vm.runtime._blockInfo)` to the store, `filterToolboxTree` and `usedGroups`. The dialog takes the groups of such an extension as `groups` of its entry and shows a checkbox for each inside the extension's row.
 
