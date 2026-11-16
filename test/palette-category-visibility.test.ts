@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
 import {blockPaletteCommentReference, extractBlockPalette, formatBlockPaletteComment} from '@kubohiroya/sb3-toolchain/browser';
-import {attachPaletteVisibilityButton, defaultVisibleGroups, filterToolboxTree, groupOfOpcode, paletteGroupSets, readTargetPalette, standardGroups,
+import {attachPaletteMenuButton, defaultVisibleGroups, filterToolboxTree, groupOfOpcode, paletteGroupSets, paletteVisibilityMenuLabel, readTargetPalette, standardGroups,
     usedGroups, visibleGroups, writeTargetPalette} from '../dist/palette-category-visibility.js';
 
 function target(name, {isStage = false, opcodes = [], comments = {}} = {}) {
@@ -101,27 +101,50 @@ test('the toolbox keeps only the categories the target shows', () => {
     filterToolboxTree(null, new Set());
 });
 
-test('the settings button sits after the categories and opens the settings without pressing a category', () => {
-    const {window} = new JSDOM('<div id="menu"><table><tr><td>Motion</td></tr></table></div>');
-    const menu = window.document.getElementById('menu');
+test('the ▼ button sits after the categories and lists the host items without pressing a category', () => {
+    const {window} = new JSDOM('<body><div id="menu"><table><tr><td>Motion</td></tr></table></div></body>');
+    const document = window.document;
+    const menu = document.getElementById('menu');
     let presses = 0;
     menu.addEventListener('mousedown', () => {presses++;});
-    let opened = 0;
+    const chosen = [];
     let locale = 'ja';
-    const attached = attachPaletteVisibilityButton(menu, () => locale, () => {opened++;});
-    assert.equal(menu.lastElementChild, attached.button);
-    assert.equal(attached.button.getAttribute('aria-label'), 'パレット内のブロックグループの表示・非表示の設定');
-    assert.equal(attached.button.querySelector('svg').getAttribute('viewBox'), '0 -960 960 960');
-    attached.button.dispatchEvent(new window.MouseEvent('mousedown', {bubbles: true}));
-    attached.button.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
-    assert.equal(opened, 1);
+    const attached = attachPaletteMenuButton(menu, () => locale, current => [
+        {label: paletteVisibilityMenuLabel(current), onSelect: () => chosen.push('groups')},
+        {label: current === 'ja' ? '機能拡張を追加' : 'Add extension', separated: true, onSelect: () => chosen.push('extension')}
+    ]);
+    const {button} = attached;
+    assert.equal(menu.lastElementChild, button);
+    assert.equal(button.textContent, '▼');
+    assert.equal(button.getAttribute('aria-label'), 'パレットのメニュー');
+    button.dispatchEvent(new window.MouseEvent('mousedown', {bubbles: true}));
+    button.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
     assert.equal(presses, 0);
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    const items = () => [...document.querySelectorAll('.tw-palette-menu [role="menuitem"]')];
+    assert.deepEqual(items().map(item => item.textContent), ['ブロックグループの表示・非表示の設定', '機能拡張を追加']);
+    assert.equal(document.querySelectorAll('.tw-palette-menu [role="separator"]').length, 1);
+    assert.equal(document.activeElement, items()[0]);
+    document.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'ArrowDown'}));
+    assert.equal(document.activeElement, items()[1]);
+    items()[0].dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    assert.deepEqual(chosen, ['groups']);
+    assert.equal(document.querySelector('.tw-palette-menu'), null);
+    assert.equal(button.getAttribute('aria-expanded'), 'false');
 
-    menu.append(window.document.createElement('table'));
+    button.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    document.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Escape'}));
+    assert.equal(document.querySelector('.tw-palette-menu'), null);
+    assert.equal(document.activeElement, button);
+    button.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    document.body.dispatchEvent(new window.MouseEvent('pointerdown', {bubbles: true}));
+    assert.equal(document.querySelector('.tw-palette-menu'), null, 'a press outside closes the menu');
+
+    menu.append(document.createElement('table'));
     locale = 'en';
     attached.update();
-    assert.equal(menu.lastElementChild, attached.button);
-    assert.equal(attached.button.title, 'Block groups shown in the palette');
+    assert.equal(menu.lastElementChild, button);
+    assert.equal(button.title, 'Palette menu');
     attached.dispose();
     assert.equal(menu.querySelector('button'), null);
 });

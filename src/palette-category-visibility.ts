@@ -179,46 +179,109 @@ export function writeTargetPalette(target: PaletteTarget, groups: readonly strin
 const sameGroups = (left: readonly string[], right: readonly string[]) =>
     left.length === right.length && new Set(left).size === left.length && left.every(group => right.includes(group));
 
-// The `event_list` glyph of Material Symbols (outlined, 24px) by Google, Apache License 2.0.
-// See THIRD_PARTY_NOTICES.md.
-const eventListPath = 'M640-120q-33 0-56.5-23.5T560-200v-160q0-33 23.5-56.5T640-440h160q33 0 56.5 23.5T880-360v160q0 ' +
-    '33-23.5 56.5T800-120H640Zm0-80h160v-160H640v160ZM80-240v-80h360v80H80Zm560-280q-33 0-56.5-23.5T560-600v-160q0-33 ' +
-    '23.5-56.5T640-840h160q33 0 56.5 23.5T880-760v160q0 33-23.5 56.5T800-520H640Zm0-80h160v-160H640v160ZM80-640v-80h360v80H80Zm640 ' +
-    '360Zm0-400Z';
+/** The menu item that opens the group settings. */
+export const paletteVisibilityMenuLabel = (locale: string) => japanese(locale) ? 'ブロックグループの表示・非表示の設定' :
+    'Show or hide block groups';
 
-const buttonLabel = (locale: string) => japanese(locale) ? 'パレット内のブロックグループの表示・非表示の設定' :
-    'Block groups shown in the palette';
+export interface PaletteMenuItem {
+    label: string;
+    onSelect(): void;
+    /** Draws a separator above the item. */
+    separated?: boolean;
+}
+
+const menuButtonLabel = (locale: string) => japanese(locale) ? 'パレットのメニュー' : 'Palette menu';
 
 /**
- * Adds the button that opens the group settings at the end of the palette's category menu: after the
- * categories, so it sits at the right end of a horizontal palette and at the bottom of a vertical one.
+ * Adds a ▼ button at the end of the palette's category menu: after the categories, so it sits at the
+ * right end of a horizontal palette and at the bottom of a vertical one. Pressing it lists the items
+ * the host gives — the group settings and the host's extension items — and runs the one chosen.
  */
-export function attachPaletteVisibilityButton(menu: HTMLElement, getLocale: () => string, onOpen: () => void) {
+export function attachPaletteMenuButton(menu: HTMLElement, getLocale: () => string,
+    getItems: (locale: string) => readonly PaletteMenuItem[]) {
     const doc = menu.ownerDocument;
     const button = doc.createElement('button');
     button.type = 'button';
-    button.className = 'tw-palette-visibility-button';
-    const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 -960 960 960');
-    svg.setAttribute('aria-hidden', 'true');
-    svg.setAttribute('focusable', 'false');
-    const path = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', eventListPath);
-    svg.append(path);
-    button.append(svg);
+    button.className = 'tw-palette-menu-button';
+    button.textContent = '▼';
+    button.setAttribute('aria-haspopup', 'menu');
+    button.setAttribute('aria-expanded', 'false');
     const label = () => {
-        const text = buttonLabel(getLocale());
+        const text = menuButtonLabel(getLocale());
         button.setAttribute('aria-label', text);
         button.title = text;
     };
     label();
-    // The category menu reacts to presses on its items; this one only opens the settings.
+    let popup: HTMLElement | null = null;
+    const closeMenu = (focusButton = false) => {
+        if (!popup) return;
+        popup.remove();
+        popup = null;
+        button.setAttribute('aria-expanded', 'false');
+        doc.removeEventListener('pointerdown', outside, true);
+        doc.removeEventListener('keydown', keys, true);
+        if (focusButton) button.focus();
+    };
+    const outside = (event: Event) => {
+        if (popup && !popup.contains(event.target as Node) && event.target !== button) closeMenu();
+    };
+    const keys = (event: KeyboardEvent) => {
+        if (!popup) return;
+        const items = Array.from(popup.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+        const index = items.indexOf(doc.activeElement as HTMLButtonElement);
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeMenu(true);
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            items[(index + step + items.length) % items.length]?.focus();
+        }
+    };
+    const openMenu = () => {
+        const locale = getLocale();
+        const items = getItems(locale);
+        if (!items.length) return;
+        popup = doc.createElement('div');
+        popup.className = 'tw-palette-menu';
+        popup.setAttribute('role', 'menu');
+        popup.setAttribute('aria-label', menuButtonLabel(locale));
+        for (const item of items) {
+            if (item.separated && popup.childElementCount) {
+                const separator = doc.createElement('div');
+                separator.setAttribute('role', 'separator');
+                popup.append(separator);
+            }
+            const entry = doc.createElement('button');
+            entry.type = 'button';
+            entry.setAttribute('role', 'menuitem');
+            entry.textContent = item.label;
+            entry.addEventListener('click', event => {
+                event.stopPropagation();
+                closeMenu();
+                item.onSelect();
+            });
+            popup.append(entry);
+        }
+        const rect = button.getBoundingClientRect();
+        const view = doc.defaultView;
+        popup.style.position = 'fixed';
+        popup.style.top = `${rect.bottom + 4}px`;
+        popup.style.right = `${Math.max(4, (view?.innerWidth ?? rect.right) - rect.right)}px`;
+        doc.body.append(popup);
+        button.setAttribute('aria-expanded', 'true');
+        doc.addEventListener('pointerdown', outside, true);
+        doc.addEventListener('keydown', keys, true);
+        popup.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    };
+    // The category menu reacts to presses on its items; this one only opens its own menu.
     const press = (event: Event) => event.stopPropagation();
     button.addEventListener('mousedown', press);
     button.addEventListener('pointerdown', press);
     button.addEventListener('click', event => {
         event.stopPropagation();
-        onOpen();
+        if (popup) closeMenu();
+        else openMenu();
     });
     menu.append(button);
     return {
@@ -228,6 +291,10 @@ export function attachPaletteVisibilityButton(menu: HTMLElement, getLocale: () =
             label();
             if (button.parentElement !== menu || menu.lastElementChild !== button) menu.append(button);
         },
-        dispose() {button.remove();}
+        close: () => closeMenu(),
+        dispose() {
+            closeMenu();
+            button.remove();
+        }
     };
 }

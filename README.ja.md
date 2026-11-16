@@ -59,7 +59,7 @@ MPL-2.0。turbowarp-plus-editor の `packages/editor-views` と `packages/editor
 | `readTargetPalette(target)`・`writeTargetPalette(target, groups, options)` | パレットのコメントを読み書きする。書く文は sb3-toolchain の `formatBlockPaletteComment` と同じ |
 | `usedGroups(target)`・`groupOfOpcode(opcode)` | コードが使っているグループと、その数 |
 | `paletteGroupSets(locale, projectSets)` | 「標準」「表現」「変数・リスト」「基本の制御」と、作品のセット |
-| `attachPaletteVisibilityButton(menu, getLocale, onOpen)` | カテゴリの一覧の末尾（横配置では右端、縦配置では下端）に、設定の画面を開くボタンを置く。アイコンは Material Symbols の `event_list`（Apache License 2.0、`THIRD_PARTY_NOTICES.md`） |
+| `attachPaletteMenuButton(menu, getLocale, getItems)` | カテゴリの一覧の末尾（横配置では右端、縦配置では下端）に ▼ のボタンを置く。押すと、ホストが渡す項目のメニューを出す。項目は「ブロックグループの表示・非表示の設定」（`paletteVisibilityMenuLabel`）と、ホストの機能拡張に関する項目 |
 
 `./palette-visibility-dialog` の `openPaletteVisibilityDialog(document, props)` は「パレット内のブロックグループの表示・非表示の設定」の画面を開く。機能拡張の各行は `@kubohiroya/turbowarp-extension-security-dialog/react` の `ExtensionRow` で描くので、拡張の追加の画面と同じ見た目になる。適用すると、出すグループと、この画面で足したセットを `onApply` に渡す。
 

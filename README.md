@@ -59,7 +59,7 @@ Each sprite and the stage can choose which block groups the palette shows: the s
 | `readTargetPalette(target)`, `writeTargetPalette(target, groups, options)` | Read and write the palette comment, in the text sb3-toolchain's `formatBlockPaletteComment` writes |
 | `usedGroups(target)`, `groupOfOpcode(opcode)` | The groups the code uses, and how many blocks of each |
 | `paletteGroupSets(locale, projectSets)` | Standard, Expression, Variables and lists, Basic control, and the project's own sets |
-| `attachPaletteVisibilityButton(menu, getLocale, onOpen)` | Puts the button that opens the settings at the end of the category menu: the right end of a horizontal palette, the bottom of a vertical one. The icon is Material Symbols `event_list` (Apache License 2.0, see `THIRD_PARTY_NOTICES.md`) |
+| `attachPaletteMenuButton(menu, getLocale, getItems)` | Puts a ▼ button at the end of the category menu (the right end of a horizontal palette, the bottom of a vertical one). Pressing it lists the items the host gives: the group settings (`paletteVisibilityMenuLabel`) and the host's extension items |
 
 `openPaletteVisibilityDialog(document, props)` from `./palette-visibility-dialog` opens the screen that chooses the groups. Each extension is drawn with `ExtensionRow` from `@kubohiroya/turbowarp-extension-security-dialog/react`, so it looks the same as in the screen that adds extensions. Applying passes the groups to show, and the sets added in the screen, to `onApply`.
 

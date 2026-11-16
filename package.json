@@ -83,8 +83,7 @@
     "tsconfig.json",
     "README.md",
     "README.ja.md",
-    "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

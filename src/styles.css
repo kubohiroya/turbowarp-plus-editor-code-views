@@ -728,32 +728,65 @@
     color: white !important;
 }
 
-/* The button at the end of the category menu that opens the group settings. */
-.tw-palette-visibility-button {
+/* The ▼ button at the end of the category menu, and the menu it opens. */
+.tw-palette-menu-button {
     display: inline-flex;
     flex: none;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
+    width: 1.75rem;
+    height: 1.75rem;
     margin: auto 0.25rem;
     padding: 0;
     border: none;
     border-radius: 0.35rem;
     background: transparent;
     color: inherit;
+    font-size: 0.75rem;
     opacity: 0.7;
     cursor: pointer;
 }
 
-.tw-palette-visibility-button:hover,
-.tw-palette-visibility-button:focus-visible {
+.tw-palette-menu-button:hover,
+.tw-palette-menu-button:focus-visible,
+.tw-palette-menu-button[aria-expanded="true"] {
     opacity: 1;
     background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
-.tw-palette-visibility-button > svg {
-    width: 1.35rem;
-    height: 1.35rem;
-    fill: currentColor;
+.tw-palette-menu {
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    min-width: 14rem;
+    padding: 0.25rem;
+    border: 1px solid var(--ui-black-transparent, #80808070);
+    border-radius: 0.5rem;
+    background: var(--ui-primary, Canvas);
+    color: var(--text-primary, CanvasText);
+    font: 0.85rem/1.4 system-ui, sans-serif;
+    box-shadow: 0 4px 12px #0000002e;
+}
+
+.tw-palette-menu [role="menuitem"] {
+    padding: 0.4rem 0.6rem;
+    border: none;
+    border-radius: 0.35rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tw-palette-menu [role="menuitem"]:hover,
+.tw-palette-menu [role="menuitem"]:focus-visible {
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    outline: none;
+}
+
+.tw-palette-menu [role="separator"] {
+    height: 1px;
+    margin: 0.25rem 0;
+    background: var(--ui-black-transparent, #80808040);
 }
