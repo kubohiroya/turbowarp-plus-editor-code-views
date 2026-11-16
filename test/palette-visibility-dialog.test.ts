@@ -112,3 +112,28 @@ test('for a new sprite the screen names it as new and offers nothing else to dec
     view.click(view.button('適用'));
     assert.deepEqual(Object.keys(view.choice), ['groups', 'addedSets']);
 });
+
+test('a new sprite can copy the groups an existing sprite shows and apply them at once', () => {
+    const view = open({newSprite: true, targetName: 'スプライト3', copySources: [
+        {name: 'スプライト1', groups: ['events', 'control', 'pen']},
+        {name: 'スプライト2', groups: ['looks', 'nameddata', 'unknownExt']}
+    ]});
+    assert.ok(view.text().includes('作成済みのスプライトからコピー'));
+    const select = view.dialog.querySelector('.tw-palette-visibility-copy select');
+    assert.deepEqual([...select.options].map(option => option.textContent), ['スプライト1', 'スプライト2']);
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set;
+    setter.call(select, '1');
+    select.dispatchEvent(new dom.window.Event('change', {bubbles: true}));
+    view.click(view.button('コピーして適用'));
+    assert.deepEqual(view.choice, {groups: ['looks', 'nameddata'], addedSets: []});
+    assert.equal(document.querySelector('dialog'), null);
+});
+
+test('the copy choice is offered only for a new sprite with other sprites to copy', () => {
+    const first = open({newSprite: true, copySources: []});
+    assert.equal(first.dialog.querySelector('.tw-palette-visibility-copy'), null);
+    first.close();
+    const ordinary = open({copySources: [{name: 'スプライト1', groups: ['events']}]});
+    assert.equal(ordinary.dialog.querySelector('.tw-palette-visibility-copy'), null);
+    ordinary.close();
+});

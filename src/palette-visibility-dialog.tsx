@@ -30,6 +30,11 @@ export interface PaletteVisibilityDialogProps {
     sets: readonly PaletteGroupSet[];
     /** Asked for a sprite just added: the screen names it as a new sprite. */
     newSprite?: boolean;
+    /**
+     * For a new sprite: the sprites already in the project with the groups each shows. The screen offers to copy
+     * one of them and apply it at once.
+     */
+    copySources?: readonly {name: string; groups: readonly string[]}[];
     onApply(choice: PaletteVisibilityChoice): void;
     onCancel(): void;
 }
@@ -48,6 +53,7 @@ const messages = {
     en: {
         title: 'Block groups shown in the palette', sprite: (name: string) => `Sprite “${name}”`, stage: 'Stage',
         newSprite: (name: string) => `New sprite “${name}”`,
+        copyFrom: 'Copy from an existing sprite', copyApply: 'Copy and apply',
         sets: 'Applicable sets', addSet: 'Add applicable set', setName: 'Set name', add: 'Add',
         standard: 'Standard block groups', extensions: 'Extension block groups', used: (count: number) => `In use ${count}`,
         hiddenInUse: (count: number) => `Hidden and in use: ${count}`, cancel: 'Cancel', apply: 'Apply', close: 'Close'
@@ -55,6 +61,7 @@ const messages = {
     ja: {
         title: 'パレット内のブロックグループの表示・非表示の設定', sprite: (name: string) => `スプライト「${name}」`, stage: '背景',
         newSprite: (name: string) => `新しいスプライト「${name}」`,
+        copyFrom: '作成済みのスプライトからコピー', copyApply: 'コピーして適用',
         sets: '適用可能なセット', addSet: '適用可能なセットを追加', setName: 'セットの名前', add: '追加',
         standard: '標準のブロックグループ', extensions: '機能拡張のブロックグループ', used: (count: number) => `使用中 ${count}`,
         hiddenInUse: (count: number) => `非表示中・使用中 ${count} 件`, cancel: 'キャンセル', apply: '適用', close: '閉じる'
@@ -67,6 +74,7 @@ interface DialogState {
     addedSets: PaletteGroupSet[];
     naming: boolean;
     setName: string;
+    copySource: number;
 }
 
 /**
@@ -77,7 +85,7 @@ interface DialogState {
 export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibilityDialogProps, DialogState> {
     constructor(props: PaletteVisibilityDialogProps) {
         super(props);
-        this.state = {shown: new Set(props.initial), addedSets: [], naming: false, setName: ''};
+        this.state = {shown: new Set(props.initial), addedSets: [], naming: false, setName: '', copySource: 0};
     }
     get text() {
         return isJapanese(this.props.locale) ? messages.ja : messages.en;
@@ -120,6 +128,14 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
             .filter(group => this.state.shown.has(group));
         this.setState(({addedSets}) => ({addedSets: [...addedSets, {id, name, groups}], naming: false, setName: ''}));
     }
+    /** Apply the groups another sprite shows, as far as this one is offered them. */
+    copyAndApply() {
+        const source = this.props.copySources?.[this.state.copySource];
+        if (!source) return;
+        const order = [...this.standard(), ...this.props.extensions.map(extension => extension.id)];
+        const groups = new Set(source.groups);
+        this.props.onApply({groups: order.filter(group => groups.has(group)), addedSets: this.state.addedSets});
+    }
     apply() {
         const order = [...this.standard(), ...this.props.extensions.map(extension => extension.id)];
         this.props.onApply({groups: order.filter(group => this.state.shown.has(group)), addedSets: this.state.addedSets});
@@ -144,6 +160,21 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                     <button type="button" className="tw-palette-visibility-close" aria-label={text.close} title={text.close}
                         onClick={onCancel}>×</button>
                 </header>
+                {this.props.newSprite && (this.props.copySources?.length ?? 0) > 0 && (
+                    <section aria-label={text.copyFrom}>
+                        <h3>{text.copyFrom}</h3>
+                        <div className="tw-palette-visibility-copy">
+                            <select aria-label={text.copyFrom} value={this.state.copySource}
+                                onChange={event => this.setState({copySource: Number(event.currentTarget.value)})}>
+                                {this.props.copySources.map((source, index) => (
+                                    <option key={index} value={index}>{source.name}</option>
+                                ))}
+                            </select>
+                            <button type="button" className="tw-palette-visibility-copy-apply"
+                                onClick={() => this.copyAndApply()}>{text.copyApply}</button>
+                        </div>
+                    </section>
+                )}
                 <section aria-label={text.sets}>
                     <h3>{text.sets}</h3>
                     <div className="tw-palette-visibility-sets">
