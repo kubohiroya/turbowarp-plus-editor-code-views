@@ -4,7 +4,8 @@ import type {createCodePaneAdapter} from './code-pane.ts';
 import {getCodeSession} from './workspace.ts';
 
 export {attachCodeWorkspace} from './workspace.ts';
-export {attachFunctionCallMenu, createCodePaneAdapter, createFunction, mountProcedureEditor, readHatScripts} from './code-pane.ts';
+export {attachFunctionCallMenu, createCodePaneAdapter, createFunction, mountProcedureEditor, readHatScripts, readSavedCodePane} from './code-pane.ts';
+export type {SavedCodePane} from './code-pane.ts';
 
 export function CodePaneCostumeThumbnail({adapter}: {adapter: ReturnType<typeof createCodePaneAdapter>}) {
     const image = React.useRef<HTMLImageElement>(null);

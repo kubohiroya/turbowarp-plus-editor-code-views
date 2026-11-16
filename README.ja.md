@@ -27,6 +27,10 @@ TurboWarp Plus Editor のコードの画面。1つの作品と1つの取り消�
 
 `attachCodeWorkspace` と `attachDockedScriptLayout` は `presentationElements(injection)` を受け取る。これはワークスペースのまわりのホストの要素（`wrapper`・`extensionButton`・`watermark`）を返す。ドックしたスクリプトの整列は、透かしに `data-code-watermark`、拡張ボタンに `data-code-extension-button` の印を付け、スタイルシートはこの印で、ホバーで出す面と非アクティブな分割表示の中でそれらを隠す。
 
+### 保存するコードエリア
+
+コードのペインのアダプター（`createCodePaneAdapter`）は、workbench が保存する作業領域のために `serialize(pane, presentation?)` と `deserialize(pane, value)` を持つ。Editor はこの作業領域を SB3 に保存する。タブは、コードエリアのズーム・スクロール位置・スクリプト表示を `{scale, x, y, scriptView?}` として保存する。presentation がないとき、`serialize` は画面のコードエリアを変えずに読む。`deserialize` は `readSavedCodePane` で形を確かめ、コードエリアの操作部品の写しを含まない presentation を返す。プレビューは写しなしで描く。
+
 Editor は GUI の React 16 にこれらを描画するので、React 16.14 以降に対応する。
 
 ## 検証
