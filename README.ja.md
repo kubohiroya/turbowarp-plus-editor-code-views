@@ -18,6 +18,7 @@ TurboWarp Plus Editor のコードの画面。1つの作品と1つの取り消�
 | `./target-combobox` | コードの窓の対象の選択 |
 | `./detached-block-palette` | 別窓のブロックパレット |
 | `./palette-category-reorder`・`./palette-category-search`・`./palette-dropdown-resize` | パレットのカテゴリの並べ替えと検索、パレットのドロップダウンの大きさの変更 |
+| `./palette-category-groups` | ツールボックスで別の category を含む category をグループとして表示する。アイコンをクリックすると、要素を並べた子ブロックパレットを影つきで重ねて開く（横配置のパレットではアイコンの右に横並び、縦配置では下に縦並び）。外側をクリックすると閉じる。Scratch Blocks は入れ子の category を捨てるので、`flattenCategoryGroups(tree)` と `filterGroupedToolboxTree(tree, groups, filter)` で木を整え、`attachPaletteCategoryGroups(menu, options)` で子ブロックパレットを開く。`splitExtensionCategories(tree, catalog, {nested: true})` は、グループを宣言した機能拡張をこのグループにする |
 | `./palette-category-visibility`・`./palette-visibility-dialog` | スプライト・背景ごとに、パレットに出すブロックグループを選ぶ。設定はエディターの画面状態として保存し、選ぶ画面を持つ |
 | `./block-argument-text` | 長いテキストの引数を短く表示し、ダイアログで編集する。テキストの引数で Shift+Enter を押すと、改行を入れてダイアログで編集を続ける |
 | `./block-number-input` | 数値の引数に入力した全角の数字・記号を半角にする |

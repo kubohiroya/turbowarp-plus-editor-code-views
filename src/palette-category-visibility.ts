@@ -222,11 +222,26 @@ export function defaultVisibleGroups(target: Pick<PaletteTarget, 'blocks'>, exte
     return [...standardGroups, ...extensionGroups.filter(id => used.has(id))];
 }
 
+/** A category for one group of an extension, drawn like the extension's own unless the group has its own look. */
+function groupCategory(category: Element, group: ExtensionPaletteGroup, children: Element[]): Element {
+    const part = category.cloneNode(false) as Element;
+    part.setAttribute('id', group.id);
+    part.setAttribute('name', group.name);
+    if (group.color1) part.setAttribute('colour', group.color1);
+    if (group.color2) part.setAttribute('secondaryColour', group.color2);
+    if (group.menuIconURI) part.setAttribute('iconURI', group.menuIconURI);
+    part.append(...children);
+    return part;
+}
+
 /**
  * Splits each extension category whose extension declares groups into one category per group, in the catalog's
  * order. A label, separator or button goes with the block after it, or with the last block when none follows.
+ * With `nested`, the extension's category stays, with its unmarked blocks, and holds the categories of its declared
+ * groups, so the palette can show it as a group that opens them (see `./palette-category-groups`).
  */
-export function splitExtensionCategories(tree: Element, catalog: PaletteGroupCatalog): void {
+export function splitExtensionCategories(tree: Element, catalog: PaletteGroupCatalog,
+    {nested = false}: {nested?: boolean} = {}): void {
     for (const category of Array.from(tree.querySelectorAll(':scope > category'))) {
         const extensionId = category.getAttribute('id');
         const groups = catalog.groups.filter(group => group.extensionId === extensionId);
@@ -244,19 +259,24 @@ export function splitExtensionCategories(tree: Element, catalog: PaletteGroupCat
             pending = [];
         }
         if (pending.length) items.set(last, [...items.get(last) ?? [], ...pending]);
+        if (nested) {
+            category.replaceChildren(...items.get(extensionId) ?? []);
+            for (const group of groups) {
+                const children = items.get(group.id);
+                if (!group.declared || !children) continue;
+                const part = groupCategory(category, group, children);
+                part.removeAttribute('showStatusButton');
+                category.append(part);
+            }
+            continue;
+        }
         let first = true;
         for (const group of groups) {
             const children = items.get(group.id);
             if (!children) continue;
-            const part = category.cloneNode(false) as Element;
-            part.setAttribute('id', group.id);
-            part.setAttribute('name', group.name);
-            if (group.color1) part.setAttribute('colour', group.color1);
-            if (group.color2) part.setAttribute('secondaryColour', group.color2);
-            if (group.menuIconURI) part.setAttribute('iconURI', group.menuIconURI);
+            const part = groupCategory(category, group, children);
             if (!first) part.removeAttribute('showStatusButton');
             first = false;
-            part.append(...children);
             category.before(part);
         }
         category.remove();
