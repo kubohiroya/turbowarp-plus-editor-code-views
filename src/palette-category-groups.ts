@@ -1,3 +1,6 @@
+import {filterToolboxTree, splitExtensionCategories} from './palette-category-visibility.ts';
+import type {PaletteGroupCatalog} from './palette-category-visibility.ts';
+
 /**
  * Block palette groups: a category of the toolbox XML that holds other categories is a group. Scratch Blocks
  * reads only the top-level categories and drops nested ones, so the tree is flattened before it is drawn:
@@ -108,6 +111,21 @@ export const filterGroupedToolboxTree = (tree: Element, groups: PaletteGroups, f
     return remaining;
 };
 
+/** Whether the toolbox tree nests categories, which Scratch Blocks drops unless the tree is prepared first. */
+export const hasCategoryGroups = (tree: Element | null | undefined): boolean => !!tree?.querySelector?.('category category');
+
+/**
+ * Prepares a toolbox tree for the palette before Scratch Blocks draws it: with a catalog, each extension that declares
+ * groups becomes a group of them; nested categories are flattened; with the groups to show, the others are removed.
+ * Pass the groups returned to the controller's `update` once the palette is drawn.
+ */
+export const prepareGroupedToolboxTree = (tree: Element,
+    {catalog, visible}: {catalog?: PaletteGroupCatalog; visible?: ReadonlySet<string> | null} = {}): PaletteGroups => {
+    if (catalog) splitExtensionCategories(tree, catalog, {nested: true});
+    const groups = flattenCategoryGroups(tree);
+    return visible ? filterGroupedToolboxTree(tree, groups, filtered => filterToolboxTree(filtered, visible)) : groups;
+};
+
 /** The part of a Scratch Blocks toolbox category the child palettes use. */
 export interface PaletteCategory {
     id_: string;
@@ -139,6 +157,16 @@ export interface PaletteCategoryGroupsController {
     isOpen(): boolean;
     /** The icon the palette shows for the category: its own, or that of the group it is in. */
     anchorOf(category: PaletteCategory): HTMLElement;
+    /**
+     * The category to select for an id: a group without blocks of its own stands for its first member, so selecting
+     * an extension that declares groups selects its first shown group.
+     */
+    selectionTarget(id: string): string;
+    /**
+     * Marks the groups' icons as buttons, focusable in a horizontal palette, and marks the group whose member's blocks
+     * are open (`data-palette-group-shown`). Call it whenever the open category changes.
+     */
+    syncButtons(openId: string | null): void;
     /** Whether the node is in a child palette. */
     contains(node: Node | null): boolean;
     close(): void;
@@ -368,6 +396,25 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         toggle,
         isOpen: () => stack.length > 0,
         anchorOf: category => categoryById(topLevelOf(category.id_))?.item_ ?? category.item_,
+        selectionTarget(id) {
+            let target = id;
+            while (groups.members.get(target)?.length && !groups.withOwnContents.has(target)) {
+                target = groups.members.get(target)![0];
+            }
+            return target;
+        },
+        syncButtons(openId) {
+            const horizontal = options.horizontal();
+            for (const category of options.categories()) {
+                if (!groups.members.has(category.id_) || parentOf.has(category.id_)) continue;
+                const item = category.item_;
+                if (horizontal) item.tabIndex = 0;
+                else item.removeAttribute('tabindex');
+                item.setAttribute('role', 'button');
+                item.toggleAttribute('data-palette-group-shown', horizontal && openId !== null && openId !== category.id_ &&
+                    topLevelOf(openId) === category.id_);
+            }
+        },
         contains,
         close,
         dispose() {
