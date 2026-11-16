@@ -26,6 +26,10 @@
       "types": "./dist/variable-references.d.ts",
       "default": "./dist/variable-references.js"
     },
+    "./variable-merge": {
+      "types": "./dist/variable-merge.d.ts",
+      "default": "./dist/variable-merge.js"
+    },
     "./target-combobox": {
       "types": "./dist/target-combobox.d.ts",
       "default": "./dist/target-combobox.js"

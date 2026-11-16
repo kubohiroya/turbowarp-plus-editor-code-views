@@ -14,6 +14,7 @@ The code views of TurboWarp Plus Editor: code in tabs and windows that share one
 | `./code-extensions` | The extension palette and field action dialog of a code view |
 | `./procedure-editor` | The function editor dialog |
 | `./variable-references` | Variable references scoped to the edited target |
+| `./variable-merge` | Merges a variable or list into another one on rename, and moves one between this sprite and all sprites from the palette |
 | `./target-combobox` | The target picker of a code window |
 | `./detached-block-palette` | The block palette in its own window |
 | `./palette-category-visibility`, `./palette-visibility-dialog` | Choose which block groups the palette shows for each sprite and the stage. The setting is saved with the editor's screen state, with a screen to choose |
