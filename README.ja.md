@@ -17,6 +17,7 @@ TurboWarp Plus Editor のコードの画面。1つの作品と1つの取り消�
 | `./target-combobox` | コードの窓の対象の選択 |
 | `./detached-block-palette` | 別窓のブロックパレット |
 | `./palette-category-reorder`・`./palette-category-search`・`./palette-dropdown-resize` | パレットのカテゴリの並べ替えと検索、パレットのドロップダウンの大きさの変更 |
+| `./palette-category-visibility`・`./palette-visibility-dialog` | スプライト・背景ごとに、パレットに出すブロックグループを選ぶ。設定はパレットのコメントに保存し、選ぶ画面を持つ |
 | `./block-argument-text` | 長いテキストの引数を短く表示し、ダイアログで編集する |
 | `./asset-edit-session`・`./dockview-unsaved` | 素材の編集のセッションと、Dockview のタブの未保存の印。ホストが GUI のエディターとレイアウトにつなぐ |
 | `./styles.css` | 上のすべてのスタイルシート |
@@ -40,3 +41,27 @@ Editor は GUI の React 16 にこれらを描画するので、React 16.14 以�
 ## ライセンス
 
 MPL-2.0。turbowarp-plus-editor の `packages/editor-views` と `packages/editor-ui` から移したコードで、同じ作者が書いたもの。移すときに GPL-3.0 から MPL-2.0 にした。由来の監査は [turbowarp-plus-packages の移行計画](https://github.com/kubohiroya/turbowarp-plus-packages/blob/main/docs/editor-migration-plan.ja.md)の「由来の監査（7b）」にある。
+
+## パレットに出すブロックグループ
+
+スプライト・背景ごとに、パレットに出すブロックグループ（標準のグループと、機能拡張のグループ）を選べる。TypeScript で言えば、作品の `extensions` が package.json、スプライトごとの設定が各ファイルの import 文にあたる。
+
+- 設定は sb3-toolchain の展開ソース形式 2 と同じ、スプライト・背景ごとのパレットのコメントに入る（作品フォルダでは `block-palette.json`）。既定と同じスプライトにはコメントを置かない。背景のコメントは、作品の「適用可能なセット」も持つ。
+- 設定のないスプライト・背景は、標準のグループと、そのコードが使っている機能拡張のグループを出す。
+- 非表示にしても、コード領域のブロックはそのまま見えて編集できる。
+
+`./palette-category-visibility`
+
+| 関数 | 内容 |
+| --- | --- |
+| `visibleGroups(target, extensionIds)` | 対象に出すグループ |
+| `filterToolboxTree(tree, visible)` | パレットを描く前のツールボックスの木から、出さないカテゴリを外す |
+| `readTargetPalette(target)`・`writeTargetPalette(target, groups, options)` | パレットのコメントを読み書きする。書く文は sb3-toolchain の `formatBlockPaletteComment` と同じ |
+| `usedGroups(target)`・`groupOfOpcode(opcode)` | コードが使っているグループと、その数 |
+| `paletteGroupSets(locale, projectSets)` | 「標準」「表現」「変数・リスト」「基本の制御」と、作品のセット |
+| `attachPaletteVisibilityButton(menu, getLocale, onOpen)` | カテゴリの一覧の末尾（横配置では右端、縦配置では下端）に、設定の画面を開くボタンを置く。アイコンは Material Symbols の `event_list`（Apache License 2.0、`THIRD_PARTY_NOTICES.md`） |
+
+`./palette-visibility-dialog` の `openPaletteVisibilityDialog(document, props)` は「パレット内のブロックグループの表示・非表示の設定」の画面を開く。機能拡張の各行は `@kubohiroya/turbowarp-extension-security-dialog/react` の `ExtensionRow` で描くので、拡張の追加の画面と同じ見た目になる。適用すると、出すグループと、この画面で足したセットを `onApply` に渡す。
+
+ホストは `@kubohiroya/sb3-toolchain`（0.25.1 以上）と `@kubohiroya/turbowarp-extension-security-dialog`（0.9.0 以上）を入れ、security-dialog の `styles.css` も読み込む。1つの機能拡張の中を複数のグループに分けて選ぶ機能は、VM がグループごとのカテゴリを作れるようになってから足す。
+

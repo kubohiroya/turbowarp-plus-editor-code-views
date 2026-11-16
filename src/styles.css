@@ -593,3 +593,167 @@
 [data-tw-plus-hidden] {
     display: none !important;
 }
+
+/* Which block groups the palette shows for one sprite or the stage. */
+.tw-palette-visibility-dialog {
+    box-sizing: border-box;
+    width: min(36rem, calc(100% - 2rem));
+    max-height: calc(100% - 2rem);
+    padding: 0;
+    border: 1px solid var(--ui-black-transparent, #80808070);
+    border-radius: 0.75rem;
+    background: var(--ui-primary, Canvas);
+    color: var(--text-primary, CanvasText);
+    font: 0.9rem/1.4 system-ui, sans-serif;
+}
+
+.tw-palette-visibility-dialog::backdrop {
+    background: #17212a80;
+}
+
+.tw-palette-visibility {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 4rem);
+}
+
+.tw-palette-visibility > header,
+.tw-palette-visibility > section,
+.tw-palette-visibility > footer {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--ui-black-transparent, #80808040);
+}
+
+.tw-palette-visibility > section:last-of-type {
+    overflow: auto;
+}
+
+.tw-palette-visibility-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.tw-palette-visibility-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.tw-palette-visibility-header p,
+.tw-palette-visibility h3 {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 400;
+    opacity: 0.75;
+}
+
+.tw-palette-visibility h3 {
+    margin-bottom: 0.5rem;
+}
+
+.tw-palette-visibility button,
+.tw-palette-visibility input[type="text"] {
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--ui-black-transparent, #80808070);
+    border-radius: 0.35rem;
+    background: var(--ui-primary, Canvas);
+    color: inherit;
+    font: inherit;
+}
+
+.tw-palette-visibility-close {
+    border: none !important;
+    font-size: 1.1rem !important;
+    line-height: 1;
+}
+
+.tw-palette-visibility-sets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.tw-palette-visibility-sets button[aria-pressed="true"] {
+    border-color: var(--looks-secondary, #7951d1);
+    color: var(--looks-secondary, #7951d1);
+}
+
+.tw-palette-visibility-add-set {
+    border-style: dashed !important;
+}
+
+.tw-palette-visibility-naming {
+    display: inline-flex;
+    gap: 0.4rem;
+}
+
+.tw-palette-visibility-standard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+    gap: 0.35rem 0.75rem;
+}
+
+.tw-palette-visibility-standard label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.tw-palette-visibility-used {
+    font-size: 0.75rem;
+    color: var(--ui-warning, #b45309);
+}
+
+.tw-palette-visibility .twextsec-rows {
+    margin: 0;
+}
+
+.tw-palette-visibility-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: none !important;
+}
+
+.tw-palette-visibility-footer > span:last-child {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.tw-palette-visibility-apply {
+    background: var(--looks-secondary, #7951d1) !important;
+    color: white !important;
+}
+
+/* The button at the end of the category menu that opens the group settings. */
+.tw-palette-visibility-button {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    margin: auto 0.25rem;
+    padding: 0;
+    border: none;
+    border-radius: 0.35rem;
+    background: transparent;
+    color: inherit;
+    opacity: 0.7;
+    cursor: pointer;
+}
+
+.tw-palette-visibility-button:hover,
+.tw-palette-visibility-button:focus-visible {
+    opacity: 1;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.tw-palette-visibility-button > svg {
+    width: 1.35rem;
+    height: 1.35rem;
+    fill: currentColor;
+}
