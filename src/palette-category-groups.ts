@@ -1,5 +1,6 @@
 import {filterToolboxTree, splitExtensionCategories} from './palette-category-visibility.ts';
 import type {PaletteGroupCatalog} from './palette-category-visibility.ts';
+import {attachPaletteCategoryReorder} from './palette-category-reorder.ts';
 
 /**
  * Block palette groups: a category of the toolbox XML that holds other categories is a group. Scratch Blocks
@@ -144,6 +145,13 @@ export interface PaletteCategoryGroupsOptions {
     choose(category: PaletteCategory): void;
     /** Called when a child palette opens or the last one closes. */
     onChange?(): void;
+    /**
+     * Lets a long press on a member of a child palette drag it to another place among the members of the same group,
+     * as the palette's own categories can be reordered. Members do not move to another group or level.
+     */
+    reorder?: boolean;
+    /** Called after the members of a group were reordered, so the host can lay out its categories with `arrange`. */
+    onReorder?(): void;
 }
 
 export interface PaletteCategoryGroupsController {
@@ -162,6 +170,11 @@ export interface PaletteCategoryGroupsController {
      * an extension that declares groups selects its first shown group.
      */
     selectionTarget(id: string): string;
+    /**
+     * Orders the toolbox's categories: by the rank of the outermost group each is in (or its own, outside any group),
+     * each group followed by its members in their order, depth first. Keeps the given order otherwise.
+     */
+    arrange<T extends {id_: string}>(categories: readonly T[], rank: (topLevelId: string) => number): T[];
     /**
      * Marks the groups' icons as buttons, focusable in a horizontal palette, and marks the group whose member's blocks
      * are open (`data-palette-group-shown`). Call it whenever the open category changes.
@@ -184,7 +197,20 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
     let groups: PaletteGroups = {members: new Map(), withOwnContents: new Set()};
     const parentOf = new Map<string, string>();
     // The open child palettes, outermost first, with the icon each opened from.
-    const stack: {id: string; anchor: HTMLElement; popup: HTMLElement}[] = [];
+    const stack: {id: string; anchor: HTMLElement; popup: HTMLElement; reorder?: {dispose(): void}}[] = [];
+    // The order members were dragged into, by group, kept while the toolbox is drawn again.
+    const memberOrder = new Map<string, string[]>();
+    const applyMemberOrder = () => {
+        for (const [id, members] of groups.members) {
+            const saved = memberOrder.get(id);
+            if (!saved) continue;
+            const rank = (member: string) => {
+                const index = saved.indexOf(member);
+                return index < 0 ? saved.length : index;
+            };
+            groups.members.set(id, members.slice().sort((a, b) => rank(a) - rank(b)));
+        }
+    };
     let selected: string | null = null;
 
     const categoryById = (id: string) => options.categories().find(category => category.id_ === id);
@@ -209,7 +235,8 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
     const closeFrom = (depth: number) => {
         let changed = false;
         while (stack.length > depth) {
-            const {anchor, popup} = stack.pop()!;
+            const {anchor, popup, reorder} = stack.pop()!;
+            reorder?.dispose();
             anchor.setAttribute('aria-expanded', 'false');
             popup.remove();
             changed = true;
@@ -309,12 +336,24 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         popup.style.color = look.color;
         popup.style.fontSize = look.fontSize;
         popup.style.fontFamily = look.fontFamily;
+        if (options.rtl) popup.dir = 'rtl';
         if (groups.withOwnContents.has(group.id_)) popup.append(createEntry(group, depth, true));
-        for (const member of members) popup.append(createEntry(member, depth + 1));
+        const entries = members.map(member => createEntry(member, depth + 1));
+        popup.append(...entries);
         (menu.parentElement ?? doc.body).append(popup);
         place(popup, anchor);
         anchor.setAttribute('aria-expanded', 'true');
-        stack.push({id: group.id_, anchor, popup});
+        // The group's own blocks stay first; its members can be dragged among themselves.
+        const reorder = options.reorder ? attachPaletteCategoryReorder(popup, () => entries,
+            (from, to) => {
+                const order = members.map(member => member.id_);
+                order.splice(to, 0, order.splice(from, 1)[0]);
+                memberOrder.set(group.id_, order);
+                groups.members.set(group.id_, order);
+                open(group, anchor, depth, false);
+                options.onReorder?.();
+            }, {horizontal: options.horizontal, area: entry => entry}) : undefined;
+        stack.push({id: group.id_, anchor, popup, reorder});
         options.onChange?.();
         if (focus) (popup.firstElementChild as HTMLElement | null)?.focus();
     };
@@ -367,6 +406,7 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         update(next) {
             close();
             groups = next;
+            applyMemberOrder();
             parentOf.clear();
             for (const [id, members] of groups.members) for (const member of members) parentOf.set(member, id);
             for (const category of options.categories()) {
@@ -396,6 +436,29 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         toggle,
         isOpen: () => stack.length > 0,
         anchorOf: category => categoryById(topLevelOf(category.id_))?.item_ ?? category.item_,
+        arrange(categories, rank) {
+            const position = new Map<string, number>();
+            const visit = (id: string) => {
+                position.set(id, position.size);
+                for (const member of groups.members.get(id) ?? []) visit(member);
+            };
+            for (const [id] of groups.members) if (!parentOf.has(id)) visit(id);
+            // Categories of the same rank keep the place of their outermost group, or their own.
+            const place = new Map<string, number>();
+            categories.forEach((category, index) => {
+                const top = topLevelOf(category.id_);
+                if (!place.has(top)) place.set(top, index);
+            });
+            const key = (category: {id_: string}) => {
+                const top = topLevelOf(category.id_);
+                return [rank(top), place.get(top)!, position.get(category.id_) ?? 0];
+            };
+            return categories.slice().sort((a, b) => {
+                const ka = key(a);
+                const kb = key(b);
+                return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2];
+            });
+        },
         selectionTarget(id) {
             let target = id;
             while (groups.members.get(target)?.length && !groups.withOwnContents.has(target)) {

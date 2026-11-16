@@ -235,3 +235,28 @@ test('a toolbox tree is prepared in one step, and a group without blocks of its 
     assert.equal(shapes.hasAttribute('data-palette-group-shown'), false);
     controller.dispose();
 });
+
+test('categories are arranged by their outermost group, each group followed by its members in order', () => {
+    const {dom, tree} = parse(toolbox);
+    const groups = flattenCategoryGroups(tree);
+    const doc = dom.window.document;
+    const menu = doc.createElement('div');
+    doc.body.append(menu);
+    const categories = Array.from(tree.children).map(element => {
+        const row = doc.createElement('div');
+        const item = doc.createElement('div');
+        row.append(item);
+        menu.append(row);
+        return {id_: element.getAttribute('id')!, name_: '', item_: item, setSelected() {}};
+    });
+    const controller = attachPaletteCategoryGroups(menu, {categories: () => categories, horizontal: () => true, choose() {}, reorder: true});
+    controller.update(groups);
+    const ids = (list: {id_: string}[]) => list.map(category => category.id_).join(',');
+    // Without an order of its own, the palette keeps its order, members after their group.
+    const shuffled = [categories[7], categories[3], categories[0], categories[5], categories[1], categories[2], categories[4], categories[6]];
+    assert.equal(ids(controller.arrange(shuffled, () => 0)), 'operators,media,looks,sound,more,events,more/1,motion');
+    const order = ['operators', 'motion', 'media'];
+    assert.equal(ids(controller.arrange(categories, id => order.indexOf(id))),
+        'operators,motion,media,looks,sound,more,events,more/1');
+    controller.dispose();
+});
