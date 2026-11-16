@@ -104,3 +104,18 @@ test('the stage has no motion group, and cancel or Escape leaves without applyin
     assert.equal(escaped.cancelled, 1);
     assert.equal(document.querySelector('dialog'), null);
 });
+
+test('for a new sprite the screen says so and can stop asking for the next ones', () => {
+    const view = open({newSprite: true, targetName: 'スプライト2'});
+    assert.ok(view.text().includes('新しいスプライト「スプライト2」'));
+    const dontAsk = view.dialog.querySelector('.tw-palette-visibility-dont-ask input');
+    assert.equal(dontAsk.checked, false);
+    view.click(dontAsk);
+    view.click(view.button('適用'));
+    assert.equal(view.choice.dontAskAgain, true);
+
+    const ordinary = open();
+    assert.equal(ordinary.dialog.querySelector('.tw-palette-visibility-dont-ask'), null);
+    ordinary.click(ordinary.button('適用'));
+    assert.equal(ordinary.choice.dontAskAgain, undefined);
+});
