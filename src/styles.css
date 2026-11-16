@@ -790,3 +790,65 @@
     margin: 0.25rem 0;
     background: var(--ui-black-transparent, #80808040);
 }
+
+/* The notice after a script dropped on the sprite list was copied into a sprite or the stage. */
+.tw-sprite-copy-notice {
+    position: fixed;
+    left: 50%;
+    bottom: 1.5rem;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: calc(100vw - 2rem);
+    padding: 0.6rem 0.6rem 0.6rem 1rem;
+    border: 1px solid var(--ui-black-transparent, #d7dbe6);
+    border-radius: 0.5rem;
+    color: var(--text-primary, #243248);
+    background: var(--ui-primary, #f5f6f8);
+    box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.2);
+    font-size: 0.875rem;
+    transform: translateX(-50%);
+}
+
+.tw-sprite-copy-notice-text {
+    overflow-wrap: anywhere;
+}
+
+.tw-sprite-copy-notice-undo {
+    flex: none;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--looks-secondary, #855cd6);
+    border-radius: 0.35rem;
+    color: var(--looks-secondary, #855cd6);
+    background: transparent;
+    font: inherit;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.tw-sprite-copy-notice-close {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: none;
+    border-radius: 0.35rem;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+}
+
+.tw-sprite-copy-notice-undo:hover,
+.tw-sprite-copy-notice-close:hover {
+    background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+/* The tile of the sprite or stage that received the copy, while the notice is shown. */
+[data-tw-received-copy] {
+    outline: 3px solid var(--looks-secondary, #855cd6);
+    outline-offset: 1px;
+}
