@@ -17,7 +17,8 @@ export interface Presentation {
     y: number;
     visible: boolean;
     scriptView?: ScriptView;
-    chrome: ReturnType<typeof captureCodePreviewChrome>;
+    /** Missing for a presentation read back from a saved workspace; the preview then draws without it. */
+    chrome?: ReturnType<typeof captureCodePreviewChrome>;
 }
 
 interface CodeSession {

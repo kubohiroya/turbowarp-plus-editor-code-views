@@ -6,6 +6,25 @@ type Pane = {id: string; targetId: string; section: number};
 type Bridge = NonNullable<ReturnType<typeof getCodeSession>['bridge']>;
 type Presentation = NonNullable<ReturnType<Bridge['capturePane']>>;
 
+/** The code area of a tab as a saved workspace keeps it: zoom, scroll position and script view. */
+export interface SavedCodePane {
+    scale: number;
+    x: number;
+    y: number;
+    scriptView?: ScriptView;
+}
+
+const scriptViews: readonly ScriptView[] = ['free', 'z', 'n'];
+const finite = (value: unknown, limit: number): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit;
+
+/** Read a saved code area back, or nothing if it does not have the shape `serialize` writes. */
+export function readSavedCodePane(value: Record<string, unknown>): SavedCodePane | undefined {
+    const {scale, x, y, scriptView} = value;
+    if (!finite(scale, 100) || scale <= 0 || !finite(x, 1e7) || !finite(y, 1e7)) return;
+    return {scale, x, y, ...(scriptViews.includes(scriptView as ScriptView) && {scriptView: scriptView as ScriptView})};
+}
+
 export function createCodePaneAdapter(vm, locale: string, attachMinimap?: AttachPreviewMinimap) {
     const session = getCodeSession(vm);
     const label = /^ja(?:-|$)/i.test(locale) ? 'このペインでコードを編集' : 'Edit code in this pane';
@@ -83,6 +102,27 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
             }
             views.set(pane.id, getDockedScriptLayout(vm)?.view.view ?? 'free');
             return session.bridge?.capturePane(pane.targetId);
+        },
+        /**
+         * The code area of a tab for a saved workspace. Without a presentation, the code area on screen is read; a
+         * presentation still waiting to be applied is what that tab shows.
+         */
+        serialize(pane: Pane, presentation?: Presentation): SavedCodePane | undefined {
+            if (pane.section !== 0) return;
+            const shown = presentation ?? (pending?.pane.id === pane.id ? pending.presentation :
+                session.bridge?.capturePane(pane.targetId));
+            if (!shown) return;
+            const scriptView = presentation ? presentation.scriptView : views.get(pane.id) ??
+                getDockedScriptLayout(vm)?.view.view;
+            return {scale: shown.scale, x: shown.x, y: shown.y, ...(scriptView && {scriptView})};
+        },
+        /** A presentation from a saved code area. The preview draws it without the chrome of the code area. */
+        deserialize(pane: Pane, value: Record<string, unknown>): Presentation | undefined {
+            if (pane.section !== 0) return;
+            const saved = readSavedCodePane(value);
+            if (!saved) return;
+            if (saved.scriptView) views.set(pane.id, saved.scriptView);
+            return {scale: saved.scale, x: saved.x, y: saved.y, visible: true, ...(saved.scriptView && {scriptView: saved.scriptView})};
         },
         restore(pane: Pane, presentation?: Presentation) {
             if (pending) cancelAnimationFrame(pending.frame);

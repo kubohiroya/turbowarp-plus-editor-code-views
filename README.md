@@ -27,6 +27,10 @@ Load `@kubohiroya/turbowarp-plus-editor-code-views/styles.css` as a global style
 
 `attachCodeWorkspace` and `attachDockedScriptLayout` take `presentationElements(injection)`, which returns the host's elements around the workspace: `wrapper`, `extensionButton` and `watermark`. The docked script layout marks the watermark with `data-code-watermark` and the extension button with `data-code-extension-button`, and the stylesheet hides them by those marks on a hover surface and in an inactive split view.
 
+### Saved code areas
+
+The code pane adapter (`createCodePaneAdapter`) has `serialize(pane, presentation?)` and `deserialize(pane, value)` for the workbench's saved workspace, which the Editor keeps in the SB3. A tab keeps the zoom, scroll position and script view of its code area as `{scale, x, y, scriptView?}`. Without a presentation, `serialize` reads the code area on screen without changing it. `deserialize` checks the shape with `readSavedCodePane` and returns a presentation without the copied controls of the code area, which the preview then draws without them.
+
 React 16.14 or later is supported, because the Editor mounts these views in the GUI's React 16.
 
 ## Verification
