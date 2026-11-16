@@ -147,8 +147,9 @@ export interface PaletteCategoryGroupsOptions {
     /** Called when a child palette opens or the last one closes. */
     onChange?(): void;
     /**
-     * Lets a long press on a member of a child palette drag it to another place among the members of the same group,
-     * as the palette's own categories can be reordered. Members do not move to another group or level.
+     * Lets a long press on a member of a group drag it to another place among the members of the same group, as the
+     * palette's own categories can be reordered: in the group's child palette, or where a pinned group shows its
+     * members. Members do not move to another group or level.
      */
     reorder?: boolean;
     /** Called after the members of a group were reordered, so the host can lay out its categories with `arrange`. */
@@ -225,7 +226,7 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
     let groups: PaletteGroups = {members: new Map(), withOwnContents: new Set()};
     const parentOf = new Map<string, string>();
     // The open child palettes, outermost first, with the icon each opened from.
-    const stack: {id: string; anchor: HTMLElement; popup: HTMLElement; reorder?: {dispose(): void}}[] = [];
+    const stack: {id: string; anchor: HTMLElement; popup: HTMLElement; reorders: {dispose(): void}[]}[] = [];
     // The order members were dragged into, by group, kept while the toolbox is drawn again.
     const ownOrder = createPaletteOrder();
     const memberOrder = () => options.order?.() ?? ownOrder;
@@ -320,8 +321,8 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
     const closeFrom = (depth: number) => {
         let changed = false;
         while (stack.length > depth) {
-            const {anchor, popup, reorder} = stack.pop()!;
-            reorder?.dispose();
+            const {anchor, popup, reorders} = stack.pop()!;
+            for (const reorder of reorders) reorder.dispose();
             anchor.setAttribute('aria-expanded', 'false');
             popup.remove();
             changed = true;
@@ -437,33 +438,32 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         // Pinning the group shows its members in the palette that shows the group.
         popup.append(pinButton(false, () => pinFrom(depth)));
         if (groups.withOwnContents.has(group.id_)) popup.append(createEntry(group, depth, true));
-        const entries: HTMLElement[] = [];
+        // The entries of each group's members shown here: the group's own, and those of pinned member groups.
+        const shown = new Map<string, HTMLElement[]>([[group.id_, []]]);
         // A pinned member group is followed by its own members, here rather than in a child palette of its own.
-        const add = (member: PaletteCategory, direct: boolean) => {
+        const add = (member: PaletteCategory, groupId: string) => {
             const entry = createEntry(member, depth + 1);
-            if (direct) entries.push(entry);
+            shown.get(groupId)!.push(entry);
             popup.append(entry);
             if (!isPinned(member.id_)) return;
+            shown.set(member.id_, []);
             for (const id of groups.members.get(member.id_) ?? []) {
                 const inner = categoryById(id);
-                if (inner) add(inner, false);
+                if (inner) add(inner, member.id_);
             }
         };
-        for (const member of members) add(member, true);
+        for (const member of members) add(member, group.id_);
         (menu.parentElement ?? doc.body).append(popup);
         place(popup, anchor);
         anchor.setAttribute('aria-expanded', 'true');
-        // The group's own blocks stay first; its members can be dragged among themselves.
-        const reorder = options.reorder ? attachPaletteCategoryReorder(popup, () => entries,
-            (from, to) => {
-                const order = members.map(member => member.id_);
-                order.splice(to, 0, order.splice(from, 1)[0]);
-                quietly(() => memberOrder().setMembers(group.id_, order));
-                groups.members.set(group.id_, order);
+        // The group's own blocks stay first; the members of each group shown here can be dragged among themselves.
+        const reorders = options.reorder ? [...shown].filter(([, entries]) => entries.length > 1).map(([groupId, entries]) =>
+            attachPaletteCategoryReorder(popup, () => entries, (from, to) => {
+                moveMember(groupId, from, to);
                 open(group, anchor, depth, false);
                 options.onReorder?.();
-            }, {horizontal: options.horizontal, area: entry => entry}) : undefined;
-        stack.push({id: group.id_, anchor, popup, reorder});
+            }, {horizontal: options.horizontal, area: entry => entry})) : [];
+        stack.push({id: group.id_, anchor, popup, reorders});
         options.onChange?.();
         if (focus) (popup.firstElementChild as HTMLElement | null)?.focus();
     };
@@ -495,6 +495,31 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         if (depth > 0) reopen(depth - 1);
         else applyVisibility();
     }
+    /** Moves a member of the group, as dragged, and keeps the order. */
+    function moveMember(groupId: string, from: number, to: number) {
+        const order = [...(groups.members.get(groupId) ?? [])];
+        order.splice(to, 0, order.splice(from, 1)[0]);
+        quietly(() => memberOrder().setMembers(groupId, order));
+        groups.members.set(groupId, order);
+    }
+    // Where the palette shows a pinned group's members, they can be dragged among themselves.
+    let inlineReorders: {dispose(): void}[] = [];
+    function attachInlineReorders() {
+        for (const reorder of inlineReorders) reorder.dispose();
+        inlineReorders = [];
+        if (!options.reorder) return;
+        for (const [id, members] of groups.members) {
+            if (members.length < 2 || !isPinned(id) || !inPalette(id)) continue;
+            const items = () => (groups.members.get(id) ?? []).map(member => categoryById(member)?.item_)
+                .filter((item): item is HTMLElement => Boolean(item));
+            inlineReorders.push(attachPaletteCategoryReorder(menu, items, (from, to) => {
+                moveMember(id, from, to);
+                close();
+                applyVisibility();
+                options.onReorder?.();
+            }, {horizontal: options.horizontal, ends: false}));
+        }
+    }
     // Shows the categories every group of which is pinned open, hides the others, and marks the groups shown.
     function applyVisibility() {
         for (const category of options.categories()) {
@@ -520,6 +545,7 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
                 }));
             } else if (!pinned) button?.remove();
         }
+        attachInlineReorders();
         markSelection();
         options.onChange?.();
     }
@@ -676,6 +702,7 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
         close,
         dispose() {
             close();
+            for (const reorder of inlineReorders) reorder.dispose();
             unwatch?.();
             events.abort();
         }
