@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-plus-editor-code-views",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Code views for TurboWarp Plus Editor: code in tabs and windows, the detached block palette, script layout and block field editing",
   "type": "module",
   "license": "MPL-2.0",
@@ -94,14 +94,12 @@
     "@kubohiroya/turbowarp-script-transfer": "0.1.5"
   },
   "peerDependencies": {
-    "@kubohiroya/sb3-toolchain": ">=0.25.1 <0.26.0",
     "@kubohiroya/turbowarp-extension-security-dialog": ">=0.9.0 <0.10.0",
     "@kubohiroya/turbowarp-plus-editor-windows": ">=0.2.0 <0.3.0",
     "react": ">=16.14",
     "react-dom": ">=16.14"
   },
   "devDependencies": {
-    "@kubohiroya/sb3-toolchain": "0.25.1",
     "@kubohiroya/turbowarp-extension-security-dialog": "0.9.0",
     "@kubohiroya/turbowarp-plus-editor-windows": "0.2.0",
     "@types/react": "18.3.31",

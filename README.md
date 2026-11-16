@@ -16,7 +16,7 @@ The code views of TurboWarp Plus Editor: code in tabs and windows that share one
 | `./variable-references` | Variable references scoped to the edited target |
 | `./target-combobox` | The target picker of a code window |
 | `./detached-block-palette` | The block palette in its own window |
-| `./palette-category-visibility`, `./palette-visibility-dialog` | Choose which block groups the palette shows for each sprite and the stage. The setting is kept in a palette comment, with a screen to choose |
+| `./palette-category-visibility`, `./palette-visibility-dialog` | Choose which block groups the palette shows for each sprite and the stage. The setting is saved with the editor's screen state, with a screen to choose |
 | `./palette-category-reorder`, `./palette-category-search`, `./palette-dropdown-resize` | Reordering and searching palette categories, and resizing palette dropdowns |
 | `./block-argument-text` | Shortens long text arguments and edits them in a dialog |
 | `./asset-edit-session`, `./dockview-unsaved` | The asset edit session and the unsaved marks on Dockview tabs, which the host connects to the GUI's editors and layout |
@@ -46,7 +46,7 @@ MPL-2.0. This code moved here from `packages/editor-views` and `packages/editor-
 
 Each sprite and the stage can choose which block groups the palette shows: the standard groups and the groups of extensions. In TypeScript terms, the project's `extensions` are package.json and each sprite's setting is a file's import statements.
 
-- The setting is kept where sb3-toolchain source format 2 keeps it: one palette comment per sprite or stage (`block-palette.json` in a project folder). A sprite whose setting equals its default gets no comment. The stage's comment also holds the project's applicable sets.
+- The setting belongs to the editor, not to the project's code, and is saved with the same screen state as the tab layout: the `blockPalette` slice of `tw-plus/workspace.json` in an SB3, or `.tw-plus/workspace.json` in a project folder. Sprites are recorded by name, as the tab layout records them, and the stage as `stage`.
 - A sprite or stage without a setting shows the standard groups and the groups of the extensions its code uses.
 - Hiding a group never hides blocks already in the code; they stay visible and editable.
 
@@ -54,14 +54,14 @@ Each sprite and the stage can choose which block groups the palette shows: the s
 
 | Function | What it does |
 | --- | --- |
-| `visibleGroups(target, extensionIds)` | The groups shown for a target |
+| `createPaletteVisibilityStore()` | One project's settings, by runtime target ID, so a renamed sprite keeps its setting: `visible`, `set`, `copy` (for a duplicate), `sets`, `addSets`, `capture(targets)` and `apply(value, targets)` for the screen-state slice, and `reset` |
+| `paletteScreenStateKey` | The name of the screen-state slice (`blockPalette`) |
 | `filterToolboxTree(tree, visible)` | Removes the categories a target does not show from the parsed toolbox before the palette is drawn |
-| `readTargetPalette(target)`, `writeTargetPalette(target, groups, options)` | Read and write the palette comment, in the text sb3-toolchain's `formatBlockPaletteComment` writes |
-| `usedGroups(target)`, `groupOfOpcode(opcode)` | The groups the code uses, and how many blocks of each |
+| `usedGroups(target)`, `groupOfOpcode(opcode)`, `defaultVisibleGroups(target, extensionIds)` | The groups the code uses and how many blocks of each, and the groups shown for a target without a setting |
 | `paletteGroupSets(locale, projectSets)` | Standard, Expression, Variables and lists, Basic control, and the project's own sets |
 | `attachPaletteMenuButton(menu, getLocale, getItems)` | Puts a ▼ button at the end of the category menu (the right end of a horizontal palette, the bottom of a vertical one). Pressing it lists the items the host gives: the group settings (`paletteVisibilityMenuLabel`) and the host's extension items |
 
 `openPaletteVisibilityDialog(document, props)` from `./palette-visibility-dialog` opens the screen that chooses the groups. Each extension is drawn with `ExtensionRow` from `@kubohiroya/turbowarp-extension-security-dialog/react`, so it looks the same as in the screen that adds extensions. Applying passes the groups to show, and the sets added in the screen, to `onApply`.
 
-The host installs `@kubohiroya/sb3-toolchain` (0.25.1 or later) and `@kubohiroya/turbowarp-extension-security-dialog` (0.9.0 or later), and loads security-dialog's `styles.css`. Choosing groups inside one extension comes once the VM can make a category per group.
+The host installs `@kubohiroya/turbowarp-extension-security-dialog` (0.9.0 or later) and loads its `styles.css`, and registers the store as a screen-state slice. Choosing groups inside one extension comes once the VM can make a category per group.
 
