@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-plus-editor-code-views",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Code views for TurboWarp Plus Editor: code in tabs and windows, the detached block palette, script layout and block field editing",
   "type": "module",
   "license": "MPL-2.0",
@@ -65,6 +65,10 @@
     "./block-number-input": {
       "types": "./dist/block-number-input.d.ts",
       "default": "./dist/block-number-input.js"
+    },
+    "./sprite-copy-notice": {
+      "types": "./dist/sprite-copy-notice.d.ts",
+      "default": "./dist/sprite-copy-notice.js"
     },
     "./script-layout": {
       "types": "./dist/script-layout-view.d.ts",
