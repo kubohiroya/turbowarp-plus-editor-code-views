@@ -4,9 +4,23 @@ const movementThreshold = 8;
 
 type Press = {pointerId: number; source: HTMLElement; x: number; y: number; timer: number};
 
+export interface PaletteCategoryReorderOptions {
+    /** Whether the items run in a row. By default, whether the menu is a horizontal block palette. */
+    horizontal?(): boolean;
+    /** The element an item takes up, which a drop over it lands on. By default, the row that holds the item. */
+    area?(item: HTMLElement): Element;
+}
+
+/**
+ * Lets a long press on an item of the menu drag it to another place among the items. Used for the palette's
+ * categories and for the members of a group's child palette.
+ */
 export function attachPaletteCategoryReorder(
-    menu: HTMLElement, getItems: () => HTMLElement[], onDrop: (from: number, to: number) => void
+    menu: HTMLElement, getItems: () => HTMLElement[], onDrop: (from: number, to: number) => void,
+    options: PaletteCategoryReorderOptions = {}
 ) {
+    const horizontal = options.horizontal ?? (() => menu.hasAttribute('data-horizontal-block-palette'));
+    const area = options.area ?? ((item: HTMLElement) => item.parentElement);
     const doc = menu.ownerDocument;
     const win = doc.defaultView;
     const events = new AbortController();
@@ -39,14 +53,14 @@ export function attachPaletteCategoryReorder(
     const itemAt = (event: PointerEvent, items: HTMLElement[]) => {
         const hit = doc.elementFromPoint(event.clientX, event.clientY);
         if (!items.length || !menu.contains(hit)) return;
-        const item = items.find(candidate => candidate.parentElement.contains(hit));
+        const item = items.find(candidate => area(candidate).contains(hit));
         if (item) return item;
 
         const first = items[0];
         const last = items[items.length - 1];
         const start = first.getBoundingClientRect();
         const end = last.getBoundingClientRect();
-        if (!menu.hasAttribute('data-horizontal-block-palette')) {
+        if (!horizontal()) {
             if (event.clientY < start.top) return first;
             if (event.clientY > end.bottom) return last;
         } else if (menu.dir === 'rtl') {
@@ -121,14 +135,19 @@ export function attachPaletteCategoryReorder(
     menu.addEventListener('lostpointercapture', event => {
         if (event.target === menu && press?.pointerId === event.pointerId) cancel();
     }, capture);
-    win.addEventListener('blur', cancel, capture);
+    // Only the window losing focus: an element's blur also reaches the window while capturing, as when the press
+    // moves the focus from one category to another.
+    win.addEventListener('blur', event => {
+        if (event.target === win) cancel();
+    }, capture);
     doc.addEventListener('keydown', event => {
         if (!preview || event.key !== 'Escape') return;
         event.stopImmediatePropagation();
         cancel();
     }, capture);
 
-    // ScratchBlocks selects categories on mouseup or touchend. Ignore the release of a reorder.
+    // ScratchBlocks selects categories on mouseup or touchend, and a group or a child palette's item opens on click.
+    // Ignore the release of a reorder.
     const swallowRelease = (event: Event) => {
         if (!suppressRelease) return;
         event.preventDefault();
@@ -136,6 +155,7 @@ export function attachPaletteCategoryReorder(
     };
     menu.addEventListener('mouseup', swallowRelease, capture);
     menu.addEventListener('touchend', swallowRelease, {...capture, passive: false});
+    menu.addEventListener('click', swallowRelease, capture);
     menu.addEventListener('touchmove', event => {
         if (preview) event.preventDefault();
     }, {...capture, passive: false});
