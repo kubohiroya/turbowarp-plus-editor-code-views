@@ -3,7 +3,8 @@ import {test} from 'node:test';
 
 import {JSDOM} from 'jsdom';
 
-import {attachPaletteCategoryGroups, filterGroupedToolboxTree, flattenCategoryGroups} from '../dist/palette-category-groups.js';
+import {attachPaletteCategoryGroups, filterGroupedToolboxTree, flattenCategoryGroups, hasCategoryGroups, prepareGroupedToolboxTree} from
+    '../dist/palette-category-groups.js';
 import {extensionPaletteCatalog, filterToolboxTree, splitExtensionCategories} from '../dist/palette-category-visibility.js';
 
 const toolbox = `<xml>
@@ -186,4 +187,51 @@ test('an extension that declares groups becomes a group of its declared groups',
         filtered => filterToolboxTree(filtered, new Set(['motion', 'shapes/text'])));
     assert.deepEqual(topLevel(tree), ['motion', 'shapes', 'shapes/text<shapes']);
     assert.deepEqual([...remaining.members], [['shapes', ['shapes/text']]]);
+});
+
+test('a toolbox tree is prepared in one step, and a group without blocks of its own is selected by its first member', () => {
+    const catalog = extensionPaletteCatalog([{
+        id: 'shapes', name: 'Shapes',
+        paletteGroups: [{id: 'geometry', name: {en: 'Geometry', ja: '図形'}}, {id: 'text', name: 'Text'}],
+        blocks: [{info: {paletteGroup: 'geometry'}, json: {type: 'shapes_circle'}}, {info: {paletteGroup: 'text'}, json: {type: 'shapes_write'}}]
+    }], 'ja');
+    const source = '<xml><category id="motion"/><category id="shapes" name="Shapes">' +
+        '<block type="shapes_circle"/><block type="shapes_write"/></category></xml>';
+    const {dom, tree} = parse(source);
+    assert.equal(hasCategoryGroups(tree), false);
+    const groups = prepareGroupedToolboxTree(tree, {catalog, visible: new Set(['motion', 'shapes/geometry', 'shapes/text'])});
+    assert.deepEqual(topLevel(tree), ['motion', 'shapes', 'shapes/geometry<shapes', 'shapes/text<shapes']);
+    assert.equal(tree.querySelector('category[id="shapes/geometry"]')!.getAttribute('name'), '図形');
+    assert.equal(hasCategoryGroups(parse(source.replace('</category></xml>', '<category id="x"/></category></xml>')).tree), true);
+    assert.deepEqual(topLevel((() => {
+        const {tree: plain} = parse(source);
+        prepareGroupedToolboxTree(plain);
+        return plain;
+    })()), ['motion', 'shapes']);
+
+    const doc = dom.window.document;
+    const menu = doc.createElement('div');
+    doc.body.append(menu);
+    const categories = Array.from(tree.children).map(element => {
+        const row = doc.createElement('div');
+        const item = doc.createElement('div');
+        row.append(item);
+        menu.append(row);
+        return {id_: element.getAttribute('id')!, name_: '', item_: item, setSelected() {}};
+    });
+    let horizontal = true;
+    const controller = attachPaletteCategoryGroups(menu, {categories: () => categories, horizontal: () => horizontal, choose() {}});
+    controller.update(groups);
+    assert.equal(controller.selectionTarget('shapes'), 'shapes/geometry');
+    assert.equal(controller.selectionTarget('motion'), 'motion');
+    const shapes = categories[1].item_;
+    controller.syncButtons('shapes/text');
+    assert.equal(shapes.getAttribute('role'), 'button');
+    assert.equal(shapes.tabIndex, 0);
+    assert.ok(shapes.hasAttribute('data-palette-group-shown'));
+    horizontal = false;
+    controller.syncButtons('shapes/text');
+    assert.equal(shapes.hasAttribute('tabindex'), false);
+    assert.equal(shapes.hasAttribute('data-palette-group-shown'), false);
+    controller.dispose();
 });
