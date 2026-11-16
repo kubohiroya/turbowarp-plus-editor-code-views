@@ -74,6 +74,14 @@
       "types": "./dist/script-layout-view.d.ts",
       "default": "./dist/script-layout-view.js"
     },
+    "./target-undo-history": {
+      "types": "./dist/target-undo-history.d.ts",
+      "default": "./dist/target-undo-history.js"
+    },
+    "./sprite-restore-history": {
+      "types": "./dist/sprite-restore-history.d.ts",
+      "default": "./dist/sprite-restore-history.js"
+    },
     "./asset-edit-session": {
       "types": "./dist/asset-edit-session.d.ts",
       "default": "./dist/asset-edit-session.js"
