@@ -16,8 +16,6 @@ export interface PaletteVisibilityChoice {
     groups: string[];
     /** Sets added in this dialog, to keep with the project. */
     addedSets: PaletteGroupSet[];
-    /** For a new sprite: start the next new sprites with these groups instead of asking. */
-    dontAskAgain?: boolean;
 }
 
 export interface PaletteVisibilityDialogProps {
@@ -30,7 +28,7 @@ export interface PaletteVisibilityDialogProps {
     used: ReadonlyMap<string, number>;
     extensions: readonly PaletteExtension[];
     sets: readonly PaletteGroupSet[];
-    /** Asked for a sprite just added: says so, and offers not to ask for the next ones. */
+    /** Asked for a sprite just added: the screen names it as a new sprite. */
     newSprite?: boolean;
     onApply(choice: PaletteVisibilityChoice): void;
     onCancel(): void;
@@ -49,14 +47,14 @@ const standardColors: Record<string, string> = {
 const messages = {
     en: {
         title: 'Block groups shown in the palette', sprite: (name: string) => `Sprite “${name}”`, stage: 'Stage',
-        newSprite: (name: string) => `New sprite “${name}”`, dontAskAgain: 'Don’t ask next time',
+        newSprite: (name: string) => `New sprite “${name}”`,
         sets: 'Applicable sets', addSet: 'Add applicable set', setName: 'Set name', add: 'Add',
         standard: 'Standard block groups', extensions: 'Extension block groups', used: (count: number) => `In use ${count}`,
         hiddenInUse: (count: number) => `Hidden and in use: ${count}`, cancel: 'Cancel', apply: 'Apply', close: 'Close'
     },
     ja: {
         title: 'パレット内のブロックグループの表示・非表示の設定', sprite: (name: string) => `スプライト「${name}」`, stage: '背景',
-        newSprite: (name: string) => `新しいスプライト「${name}」`, dontAskAgain: '次回から尋ねない',
+        newSprite: (name: string) => `新しいスプライト「${name}」`,
         sets: '適用可能なセット', addSet: '適用可能なセットを追加', setName: 'セットの名前', add: '追加',
         standard: '標準のブロックグループ', extensions: '機能拡張のブロックグループ', used: (count: number) => `使用中 ${count}`,
         hiddenInUse: (count: number) => `非表示中・使用中 ${count} 件`, cancel: 'キャンセル', apply: '適用', close: '閉じる'
@@ -69,7 +67,6 @@ interface DialogState {
     addedSets: PaletteGroupSet[];
     naming: boolean;
     setName: string;
-    dontAskAgain: boolean;
 }
 
 /**
@@ -80,7 +77,7 @@ interface DialogState {
 export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibilityDialogProps, DialogState> {
     constructor(props: PaletteVisibilityDialogProps) {
         super(props);
-        this.state = {shown: new Set(props.initial), addedSets: [], naming: false, setName: '', dontAskAgain: false};
+        this.state = {shown: new Set(props.initial), addedSets: [], naming: false, setName: ''};
     }
     get text() {
         return isJapanese(this.props.locale) ? messages.ja : messages.en;
@@ -125,8 +122,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
     }
     apply() {
         const order = [...this.standard(), ...this.props.extensions.map(extension => extension.id)];
-        this.props.onApply({groups: order.filter(group => this.state.shown.has(group)), addedSets: this.state.addedSets,
-            ...this.props.newSprite ? {dontAskAgain: this.state.dontAskAgain} : {}});
+        this.props.onApply({groups: order.filter(group => this.state.shown.has(group)), addedSets: this.state.addedSets});
     }
     render() {
         const {locale, targetName, isStage, used, extensions, onCancel} = this.props;
@@ -210,13 +206,6 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                 )}
                 <footer className="tw-palette-visibility-footer">
                     <span role="status">{hiddenInUse > 0 ? text.hiddenInUse(hiddenInUse) : ''}</span>
-                    {this.props.newSprite && (
-                        <label className="tw-palette-visibility-dont-ask">
-                            <input type="checkbox" checked={this.state.dontAskAgain}
-                                onChange={() => this.setState(({dontAskAgain}) => ({dontAskAgain: !dontAskAgain}))} />
-                            {text.dontAskAgain}
-                        </label>
-                    )}
                     <span>
                         <button type="button" onClick={onCancel}>{text.cancel}</button>
                         <button type="button" className="tw-palette-visibility-apply" onClick={() => this.apply()}>
