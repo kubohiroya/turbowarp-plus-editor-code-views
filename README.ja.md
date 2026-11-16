@@ -14,6 +14,7 @@ TurboWarp Plus Editor のコードの画面。1つの作品と1つの取り消�
 | `./code-extensions` | コードの表示の拡張パレットと、入力欄の操作のダイアログ |
 | `./procedure-editor` | 関数の編集ダイアログ |
 | `./variable-references` | 編集中の対象に絞った変数の参照 |
+| `./variable-merge` | 名前の変更で変数・リストを既存のものに統合し、パレットから「このスプライトのみ」と「すべてのスプライト用」を切り替える |
 | `./target-combobox` | コードの窓の対象の選択 |
 | `./detached-block-palette` | 別窓のブロックパレット |
 | `./palette-category-reorder`・`./palette-category-search`・`./palette-dropdown-resize` | パレットのカテゴリの並べ替えと検索、パレットのドロップダウンの大きさの変更 |
