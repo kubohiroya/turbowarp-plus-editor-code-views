@@ -331,6 +331,69 @@ export interface SavedPaletteVisibility {
     stage?: {groups: string[]};
     sprites?: Record<string, {groups: string[]}>;
     sets?: Record<string, SavedGroupSet>;
+    order?: SavedPaletteOrder;
+}
+
+/** The order the palette's categories were dragged into: the top level, and the members of each group, by ID. */
+export interface SavedPaletteOrder {
+    categories?: string[];
+    groups?: Record<string, string[]>;
+}
+
+/** The order the palette's categories were dragged into, for the whole project. */
+export interface PaletteOrder {
+    /** The top-level categories, by ID, in order. Categories not listed follow them. */
+    categories(): string[];
+    setCategories(ids: readonly string[]): void;
+    /** A group's members, by ID, in order, or nothing when they were never reordered. */
+    members(groupId: string): string[] | undefined;
+    setMembers(groupId: string, ids: readonly string[]): void;
+    /** The order to save, or nothing when nothing was reordered. */
+    capture(): SavedPaletteOrder | undefined;
+    /** Takes a saved order. A value that is not one leaves the palette in its own order. */
+    apply(value: unknown): void;
+    reset(): void;
+}
+
+/** Keeps the order of the palette's categories. `onChange` is called when the user reorders them. */
+export function createPaletteOrder({onChange}: {onChange?(): void} = {}): PaletteOrder {
+    let categories: string[] = [];
+    let groups = new Map<string, string[]>();
+    return {
+        categories: () => [...categories],
+        setCategories(ids) {
+            categories = [...ids];
+            onChange?.();
+        },
+        members: groupId => groups.has(groupId) ? [...groups.get(groupId)!] : undefined,
+        setMembers(groupId, ids) {
+            groups.set(groupId, [...ids]);
+            onChange?.();
+        },
+        capture() {
+            const saved: SavedPaletteOrder = {};
+            if (categories.length) saved.categories = [...categories];
+            if (groups.size) saved.groups = Object.fromEntries([...groups].map(([id, ids]) => [id, [...ids]]));
+            return saved.categories || saved.groups ? saved : undefined;
+        },
+        apply(value) {
+            categories = [];
+            groups = new Map();
+            if (!value || typeof value !== 'object') return;
+            const saved = value as Record<string, unknown>;
+            categories = strings(saved.categories) ?? [];
+            if (saved.groups && typeof saved.groups === 'object' && !Array.isArray(saved.groups)) {
+                for (const [id, ids] of Object.entries(saved.groups as Record<string, unknown>)) {
+                    const members = strings(ids);
+                    if (members) groups.set(id, members);
+                }
+            }
+        },
+        reset() {
+            categories = [];
+            groups = new Map();
+        }
+    };
 }
 
 const strings = (value: unknown): string[] | undefined =>
@@ -357,13 +420,18 @@ export interface PaletteVisibilityStore {
     apply(value: unknown, targets: readonly PaletteTarget[]): void;
     /** Forgets every setting, for a project without any. */
     reset(): void;
+    /** The order of the palette's categories, saved and loaded with the other settings. */
+    order: PaletteOrder;
 }
 
 /** The settings of one project, by runtime target ID, so a renamed sprite keeps its setting. */
-export function createPaletteVisibilityStore({catalog}: {
+export function createPaletteVisibilityStore({catalog, onOrderChange}: {
     /** The extension groups on offer now, so the default counts the blocks of declared groups. */
     catalog?: () => PaletteGroupCatalog | undefined;
+    /** Called when the user reorders the palette's categories, so the project can be marked as changed. */
+    onOrderChange?(): void;
 } = {}): PaletteVisibilityStore {
+    const order = createPaletteOrder({onChange: onOrderChange});
     const defaults = (target: PaletteTarget, extensionIds: readonly string[]) =>
         defaultVisibleGroups(target, extensionIds, catalog?.());
     let groups = new Map<string, string[]>();
@@ -395,13 +463,17 @@ export function createPaletteVisibilityStore({catalog}: {
             }
             if (Object.keys(sprites).length) saved.sprites = sprites;
             if (Object.keys(projectSets).length) saved.sets = structuredClone(projectSets);
-            return saved.stage || saved.sprites || saved.sets ? saved : undefined;
+            const arranged = order.capture();
+            if (arranged) saved.order = arranged;
+            return saved.stage || saved.sprites || saved.sets || saved.order ? saved : undefined;
         },
         apply(value, targets) {
             groups = new Map();
             projectSets = {};
+            order.reset();
             if (!value || typeof value !== 'object' || (value as {version?: unknown}).version !== 1) return;
             const saved = value as Record<string, unknown>;
+            order.apply(saved.order);
             const setting = (entry: unknown) => entry && typeof entry === 'object' ?
                 strings((entry as {groups?: unknown}).groups) : undefined;
             const sprites = saved.sprites && typeof saved.sprites === 'object' ? saved.sprites as Record<string, unknown> : {};
@@ -421,7 +493,9 @@ export function createPaletteVisibilityStore({catalog}: {
         reset() {
             groups = new Map();
             projectSets = {};
-        }
+            order.reset();
+        },
+        order
     };
 }
 

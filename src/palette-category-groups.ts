@@ -1,5 +1,6 @@
 import {filterToolboxTree, splitExtensionCategories} from './palette-category-visibility.ts';
-import type {PaletteGroupCatalog} from './palette-category-visibility.ts';
+import {createPaletteOrder} from './palette-category-visibility.ts';
+import type {PaletteGroupCatalog, PaletteOrder} from './palette-category-visibility.ts';
 import {attachPaletteCategoryReorder} from './palette-category-reorder.ts';
 
 /**
@@ -152,9 +153,19 @@ export interface PaletteCategoryGroupsOptions {
     reorder?: boolean;
     /** Called after the members of a group were reordered, so the host can lay out its categories with `arrange`. */
     onReorder?(): void;
+    /**
+     * Where the members' order is kept, such as the palette settings saved with the project. By default the order
+     * lasts while the palette does.
+     */
+    order?(): Pick<PaletteOrder, 'members' | 'setMembers'> | undefined;
 }
 
 export interface PaletteCategoryGroupsController {
+    /**
+     * Prepares a toolbox tree as {@link prepareGroupedToolboxTree} does, and puts each group's members in the order
+     * they were dragged into, so the palette is drawn in that order. Pass the groups returned to `update`.
+     */
+    prepare(tree: Element, options?: {catalog?: PaletteGroupCatalog; visible?: ReadonlySet<string> | null}): PaletteGroups;
     /** Takes the groups of the toolbox just drawn: hides their members' icons and marks the groups' icons. */
     update(groups: PaletteGroups): void;
     isGroup(id: string): boolean;
@@ -199,17 +210,24 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
     // The open child palettes, outermost first, with the icon each opened from.
     const stack: {id: string; anchor: HTMLElement; popup: HTMLElement; reorder?: {dispose(): void}}[] = [];
     // The order members were dragged into, by group, kept while the toolbox is drawn again.
-    const memberOrder = new Map<string, string[]>();
-    const applyMemberOrder = () => {
-        for (const [id, members] of groups.members) {
-            const saved = memberOrder.get(id);
+    const ownOrder = createPaletteOrder();
+    const memberOrder = () => options.order?.() ?? ownOrder;
+    const applyMemberOrder = (target: PaletteGroups) => {
+        for (const [id, members] of target.members) {
+            const saved = memberOrder().members(id);
             if (!saved) continue;
             const rank = (member: string) => {
                 const index = saved.indexOf(member);
                 return index < 0 ? saved.length : index;
             };
-            groups.members.set(id, members.slice().sort((a, b) => rank(a) - rank(b)));
+            target.members.set(id, members.slice().sort((a, b) => rank(a) - rank(b)));
         }
+    };
+    const useGroups = (next: PaletteGroups) => {
+        groups = next;
+        applyMemberOrder(groups);
+        parentOf.clear();
+        for (const [id, members] of groups.members) for (const member of members) parentOf.set(member, id);
     };
     let selected: string | null = null;
 
@@ -348,7 +366,7 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
             (from, to) => {
                 const order = members.map(member => member.id_);
                 order.splice(to, 0, order.splice(from, 1)[0]);
-                memberOrder.set(group.id_, order);
+                memberOrder().setMembers(group.id_, order);
                 groups.members.set(group.id_, order);
                 open(group, anchor, depth, false);
                 options.onReorder?.();
@@ -403,12 +421,36 @@ export const attachPaletteCategoryGroups = (menu: HTMLElement, options: PaletteC
     doc.defaultView!.addEventListener('resize', close, {signal: events.signal});
 
     return {
+        prepare(tree, prepareOptions) {
+            const prepared = prepareGroupedToolboxTree(tree, prepareOptions);
+            close();
+            useGroups(prepared);
+            // Each group is followed by its members, each with its own members, in their order.
+            const elements = Array.from(tree.children).filter(isCategory);
+            const byId = new Map(elements.map(element => [element.getAttribute('id')!, element]));
+            const ordered: Element[] = [];
+            const visit = (element: Element) => {
+                ordered.push(element);
+                for (const member of groups.members.get(element.getAttribute('id')!) ?? []) {
+                    const child = byId.get(member);
+                    if (child) visit(child);
+                }
+            };
+            for (const element of elements) if (!element.hasAttribute(groupParentAttribute)) visit(element);
+            const slots = elements.map(element => {
+                const slot = tree.ownerDocument.createComment('palette-category');
+                element.replaceWith(slot);
+                return slot;
+            });
+            slots.forEach((slot, index) => {
+                if (ordered[index]) slot.replaceWith(ordered[index]);
+                else slot.remove();
+            });
+            return prepared;
+        },
         update(next) {
             close();
-            groups = next;
-            applyMemberOrder();
-            parentOf.clear();
-            for (const [id, members] of groups.members) for (const member of members) parentOf.set(member, id);
+            useGroups(next);
             for (const category of options.categories()) {
                 const member = parentOf.has(category.id_);
                 const row = category.item_.parentElement;

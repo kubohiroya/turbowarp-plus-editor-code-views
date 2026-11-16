@@ -5,7 +5,8 @@ import {JSDOM} from 'jsdom';
 
 import {attachPaletteCategoryGroups, filterGroupedToolboxTree, flattenCategoryGroups, hasCategoryGroups, prepareGroupedToolboxTree} from
     '../dist/palette-category-groups.js';
-import {extensionPaletteCatalog, filterToolboxTree, splitExtensionCategories} from '../dist/palette-category-visibility.js';
+import {createPaletteOrder, createPaletteVisibilityStore, extensionPaletteCatalog, filterToolboxTree, splitExtensionCategories} from
+    '../dist/palette-category-visibility.js';
 
 const toolbox = `<xml>
 <category id="motion"><block type="motion_movesteps"/></category>
@@ -258,5 +259,41 @@ test('categories are arranged by their outermost group, each group followed by i
     const order = ['operators', 'motion', 'media'];
     assert.equal(ids(controller.arrange(categories, id => order.indexOf(id))),
         'operators,motion,media,looks,sound,more,events,more/1');
+    controller.dispose();
+});
+
+test('the order is saved with the palette settings and given back to a loaded project', () => {
+    let changes = 0;
+    const store = createPaletteVisibilityStore({onOrderChange: () => changes++});
+    assert.equal(store.capture([]), undefined);
+    store.order.setCategories(['operators', 'motion']);
+    store.order.setMembers('media', ['more', 'looks', 'sound']);
+    assert.equal(changes, 2);
+    const saved = store.capture([]);
+    assert.deepEqual(saved, {version: 1, order: {categories: ['operators', 'motion'], groups: {media: ['more', 'looks', 'sound']}}});
+    const loaded = createPaletteVisibilityStore();
+    loaded.apply(structuredClone(saved), []);
+    assert.deepEqual(loaded.order.categories(), ['operators', 'motion']);
+    assert.deepEqual(loaded.order.members('media'), ['more', 'looks', 'sound']);
+    assert.equal(loaded.order.members('more'), undefined);
+    loaded.apply({version: 1, order: {categories: 'motion', groups: {media: [1], more: ['control']}}}, []);
+    assert.deepEqual(loaded.order.categories(), []);
+    assert.deepEqual([loaded.order.members('media'), loaded.order.members('more')], [undefined, ['control']]);
+    loaded.reset();
+    assert.equal(loaded.capture([]), undefined);
+});
+
+test('a prepared tree puts each group\'s members in their saved order', () => {
+    const {dom, tree} = parse(toolbox);
+    const order = createPaletteOrder();
+    order.setMembers('media', ['more', 'looks', 'sound']);
+    order.setMembers('more', ['more/1', 'events']);
+    const menu = dom.window.document.createElement('div');
+    dom.window.document.body.append(menu);
+    const controller = attachPaletteCategoryGroups(menu, {categories: () => [], horizontal: () => true, choose() {}, order: () => order});
+    const groups = controller.prepare(tree);
+    assert.deepEqual(topLevel(tree),
+        ['motion', 'media', 'more<media', 'more/1<more', 'events<more', 'looks<media', 'sound<media', 'operators']);
+    assert.deepEqual(groups.members.get('media'), ['more', 'looks', 'sound']);
     controller.dispose();
 });
