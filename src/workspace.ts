@@ -1,4 +1,5 @@
 import {attachBlockDrag} from './block-drag.ts';
+import {registerCodeWorkspace} from './code-workspace-registry.ts';
 import {workspaceXML, type CodeTarget} from './history.ts';
 import {isFoldedDefinition, removeObsoleteProcedureInputs, setFoldedDefinition} from './procedure-edits.ts';
 import {decodeEdit, encodeEdit, isCommentEdit} from './protocol.ts';
@@ -416,6 +417,7 @@ function paintPreviewFolds(blocks, preview, target, label: string) {
 
 export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, options, onError, presentationElements = null as PresentationElements | null}) {
     const session = getCodeSession(vm);
+    const unregisterCodeWorkspace = registerCodeWorkspace(workspace);
     const homeDocument: Document = workspace.getInjectionDiv().ownerDocument;
     const histories = new WeakMap();
     const signature = target => target.blocks.toXML(target.comments);
@@ -678,6 +680,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
         },
         dispose() {
             blockDrag.dispose();
+            unregisterCodeWorkspace();
             shown?.disconnect();
             visibility.dispose();
             if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);

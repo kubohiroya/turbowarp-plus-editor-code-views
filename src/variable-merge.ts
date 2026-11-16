@@ -1,3 +1,4 @@
+import {isCodeWorkspace as isRecordedCodeWorkspace} from './code-workspace-registry.ts';
 import {applyPlan, planMerge, planScopeChange, refreshEditor, undoPlan,
     type Plan, type Refusal, type VmLike} from './variable-merge-plan.ts';
 
@@ -380,7 +381,8 @@ export function installVariableMerge (vm: VmLike & {blockListener?: unknown}, Sc
     const isCodeWorkspace = (workspace: WorkspaceLike) => {
         const main = workspace?.targetWorkspace ?? workspace;
         if (!main) return false;
-        if (vm.blockListener && Array.isArray(main.listeners_)) return main.listeners_.includes(vm.blockListener);
+        if (isRecordedCodeWorkspace(vm, main)) return true;
+        if (vm.blockListener && Array.isArray(main.listeners_)) return false;
         return main === ScratchBlocks.getMainWorkspace?.();
     };
     const documentOf = (workspace: WorkspaceLike) => {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
+import {registerCodeWorkspace} from '../dist/code-workspace-registry.js';
 import {applyPlan, attachVariableMerge, describePlan, describeRefusal, installVariableMerge, planMerge, planScopeChange,
     undoPlan, variableMergeMessages} from '../dist/variable-merge.js';
 
@@ -440,4 +441,38 @@ test('attachVariableMerge reports an install that throws instead of rejecting', 
     await attached.ready;
     assert.equal(errors.length, 1);
     attached.dispose();
+});
+
+// With the code area's own attachment, the GUI adds the attachment's listener (which wraps
+// vm.blockListener) instead of vm.blockListener itself, so the workspace is known from the record.
+test('renaming offers a merge in a code workspace recorded by the code area attachment', async () => {
+    const {window} = new JSDOM('<body></body>');
+    const {document} = window;
+    window.HTMLDialogElement.prototype.showModal ??= function () {
+        this.setAttribute('open', '');
+    };
+    const p = project({
+        stageVars: [variable('g', 'score', 5)],
+        sprite1Vars: [variable('a', 'scor', 3)],
+        sprite1Blocks: [reporter('r1', 'a', 'scor')]
+    });
+    const fake = scratchBlocks(p.vm, document);
+    fake.workspace.variables = [fake.model('g', 'score'), fake.model('a', 'scor')];
+    fake.workspace.listeners_ = [function blockListener () {}];
+    const remove = installVariableMerge(p.vm, fake.ScratchBlocks, {document});
+
+    fake.workspace.nextName = 'score';
+    fake.ScratchBlocks.Variables.renameVariable(fake.workspace, fake.model('a', 'scor'));
+    await flush();
+    assert.equal(document.querySelector('.twPlusVariableMergeDialog'), null, 'an unrecorded workspace keeps the alert');
+    assert.equal(fake.alerts.length, 1);
+
+    const unregister = registerCodeWorkspace(fake.workspace);
+    fake.ScratchBlocks.Variables.renameVariable(fake.workspace, fake.model('a', 'scor'));
+    await flush();
+    assert.ok(document.querySelector('.twPlusVariableMergeDialog'));
+    assert.equal(fake.alerts.length, 1);
+    unregister();
+    remove();
+    window.close();
 });
