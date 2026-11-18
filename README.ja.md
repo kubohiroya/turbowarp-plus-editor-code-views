@@ -41,11 +41,25 @@ TurboWarp Plus Editor のコードの画面。1つの作品と1つの取り消�
 
 Editor は GUI の React 16 にこれらを描画するので、React 16.14 以降に対応する。
 
+## スクリプト間の矢印
+
+コードの背面に、関数呼び出しを紫系の実線、メッセージ送信を橙系の破線で表示する。「送って待つ」には待機の印を添える。通常配置、Z/N 配置、折り畳み、プレビュー、別窓で同じ表現を使う。関数の再帰はスクリプトの外へ回る線で示す。選択・ホバーによる強調は太さと不透明度で行い、関係種別の色・線種は変えない。
+
+関係は作品データから読み、折り畳みによって表示から消えた呼び出しも保持する。展開中は呼び出しブロックから、折り畳み中は見えているハットから結ぶ。同じハットと宛先へ重なる呼び出しは件数を表示する。別スプライトや一スクリプト表示の外にある接続先は、画面端の案内から辿れる。変数などで呼び出し先が変わるものは「実行時に決定」と示し、見えていない既定値を宛先とみなさない。
+
+スクリプトをドラッグしている間は、そこへ入る・そこから出る矢印を太く濃くし、画面にある相手のスクリプト全体を枠で強調する。関係しない矢印は薄くし、画面外の相手は接続先の案内を強調する。関数とメッセージの色・線種は維持する。折り畳み中も同じように働き、ドラッグの終了・矢印の非表示・画面の破棄で一時的な枠を解除する。移動中に Blockly がブロックを別の SVG へ移しても追従する。
+
+`attachDockedScriptLayout` と `attachCodeWorkspace` のプレビュー・関数エディタには自動で付く。VM を持たない表示では、`attachScriptView` に `relations: {getTarget, getRelations, getTargetName, navigate}` を渡す。`getRelations` は親の `createCodeSession` が渡す `scriptRelations`、`getTarget` はその対象の `blocks` を使う。`getTargetName` は既存の対象一覧から名前を返し、同じメッセージを受信する別スプライトを案内で識別できるようにする。投影の受信後は `view.relations.update()` を呼ぶ。関係だけの更新は `relations`、接続先への移動は `relation-navigate`／`relation-focus` で既存の編集回収・対象切り替えを経由する。編集中の窓には履歴の更新のために XML を再読み込みさせない。
+
+色は共通の CSS 変数 `--tw-script-function-stroke` と `--tw-script-message-stroke` に定義する。明暗テーマでは同じ種別のまま明度を変え、線種でも区別できる。既存の関数呼び出し図とミニマップも関数用の変数を使う。
+
+既定は表示する。各コード画面の「呼び出しの矢印」を外すと表示を解除できる。作品の保存形式は変えない。完全に切り戻す場合は導入前のパッケージ固定と結線へ戻す。関連: [Editor #683](https://github.com/kubohiroya/turbowarp-plus-editor/issues/683)。
+
 ## 検証
 
 `npm test` でビルドし、単体テストを実行し、React 16.14 より新しい API を使っていないことを確かめる。
 
-`npm run test:browser` は、最小のエディター実行環境（`@kubohiroya/turbowarp-plus-editor-test-runtime`）で、Editor と同じ VM と Scratch Blocks を使い、パレットのグループを Chromium で操作して確かめる（子ブロックパレット、ピン、並べ替え、別窓のパレット）。`TWPE_CHROME_EXECUTABLE` を指定すると、Playwright のものの代わりにその Chromium を使う。
+`npm run test:browser` は、最小のエディター実行環境（`@kubohiroya/turbowarp-plus-editor-test-runtime`）で、Editor と同じ VM と Scratch Blocks を使い、パレットのグループとスクリプト間の矢印を Chromium で操作して確かめる。矢印は `node --test test/script-arrows.browser.ts` で限定実行でき、折り畳み・実際の関数エディタ・Z/N 配置・テーマ・別スプライトへの移動・キー入力の隔離をヘッドレスで検証する。`TWPE_CHROME_EXECUTABLE` を指定すると、Playwright のものの代わりにその Chromium を使う。
 
 ## ライセンス
 

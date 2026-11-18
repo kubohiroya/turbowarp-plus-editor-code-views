@@ -520,6 +520,150 @@
     pointer-events: none;
 }
 
+:root {
+    --tw-script-function-stroke: light-dark(#7051c7, #c9abff);
+    --tw-script-message-stroke: light-dark(#a85a00, #ffbd66);
+}
+
+[data-script-relation="function"] {
+    --tw-script-relation-stroke: var(--tw-script-function-stroke);
+    --tw-script-relation-dash: none;
+}
+
+[data-script-relation="message"] {
+    --tw-script-relation-stroke: var(--tw-script-message-stroke);
+    --tw-script-relation-dash: 7 5;
+}
+
+[data-script-relation-layer] {
+    pointer-events: none;
+}
+
+.tw-script-relation-line, .tw-script-relation-head {
+    fill: none;
+    stroke: var(--tw-script-relation-stroke);
+    stroke-width: 1.8;
+    stroke-opacity: 0.75;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+.tw-script-relation-line {
+    stroke-dasharray: var(--tw-script-relation-dash);
+}
+
+[data-script-relation][data-highlighted] :is(.tw-script-relation-line, .tw-script-relation-head) {
+    stroke-width: 3;
+    stroke-opacity: 1;
+}
+
+[data-script-dragging] > [data-script-relation]:not([data-highlighted]) :is(.tw-script-relation-line, .tw-script-relation-head) {
+    stroke-opacity: 0.2;
+}
+
+.tw-script-relation-script-highlight {
+    fill: light-dark(#3373cc, #93c5fd);
+    fill-opacity: 0.1;
+    stroke: light-dark(#2563a8, #93c5fd);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+.tw-script-relation-script-highlight[data-emphasis="source"] {
+    stroke-width: 3;
+    fill-opacity: 0.15;
+}
+
+.tw-script-relation-destinations button[data-highlighted] {
+    font-weight: bold;
+    box-shadow: inset 3px 0 var(--tw-script-relation-stroke);
+    padding-inline-start: 6px;
+}
+
+.tw-script-relation-badge {
+    fill: var(--tw-script-relation-stroke);
+    stroke: var(--ui-primary, Canvas);
+    stroke-width: 3px;
+    paint-order: stroke;
+    font: 12px sans-serif;
+    pointer-events: none;
+}
+
+.tw-script-relation-controls {
+    position: absolute;
+    z-index: 5;
+    inset-inline-end: 10px;
+    inset-block-start: 10px;
+    max-inline-size: min(240px, 45%);
+    padding: 6px 8px;
+    border: 1px solid var(--ui-black-transparent, #80808070);
+    border-radius: 6px;
+    background: var(--ui-primary, Canvas);
+    color: var(--text-primary, CanvasText);
+    font: 12px sans-serif;
+    pointer-events: none;
+}
+
+.tw-script-relation-controls label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    inline-size: fit-content;
+    pointer-events: auto;
+}
+
+.tw-script-relation-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-block-start: 4px;
+}
+
+.tw-script-relation-legend[hidden] { display: none; }
+
+.tw-script-relation-legend [data-script-relation]::before,
+.tw-script-relation-destinations [data-script-relation]::before {
+    content: "";
+    display: inline-block;
+    inline-size: 20px;
+    margin-inline-end: 5px;
+    vertical-align: middle;
+    border-block-start: 2px solid var(--tw-script-relation-stroke);
+}
+
+.tw-script-relation-legend [data-script-relation="message"]::before,
+.tw-script-relation-destinations [data-script-relation="message"]::before {
+    border-block-start-style: dashed;
+}
+
+.tw-script-relation-destinations {
+    max-block-size: 9rem;
+    overflow: auto;
+}
+
+.tw-script-relation-destinations button {
+    display: block;
+    inline-size: 100%;
+    padding: 4px 0;
+    border: 0;
+    text-align: start;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    pointer-events: auto;
+}
+
+.tw-script-relation-destinations button:disabled { cursor: default; }
+
+@media (forced-colors: active) {
+    :root {
+        --tw-script-function-stroke: CanvasText;
+        --tw-script-message-stroke: CanvasText;
+    }
+}
+
 .tw-script-view-menu-arrow {
     display: inline-block;
     inline-size: 0.4em;

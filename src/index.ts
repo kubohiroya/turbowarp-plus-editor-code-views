@@ -6,11 +6,14 @@ import {readFieldActionPanel, runFieldAction, type FieldActionPanel, type Progra
 import {capture, createHistory, restore, workspaceXML} from './history.ts';
 import {removeObsoleteProcedureInputs} from './procedure-edits.ts';
 import {decodeEdit, isCodeEdit, isCommentEdit} from './protocol.ts';
+import {readScriptRelations, type ScriptEndpoint} from './script-relations.ts';
 
 export {attachDockedCodeExtensions} from './code-extensions.ts';
 export type {NativeFieldEditSession} from './native-extension-field.ts';
 export type {FieldActionPanel, ProgrammaticExtensionField} from './programmatic-extension-field.ts';
 export {encodeEdit} from './protocol.ts';
+export {readScriptRelations} from './script-relations.ts';
+export type {ScriptEndpoint, ScriptRelation} from './script-relations.ts';
 
 // A drop must stay within one target's block and comment history.
 const supportsSharedHistory = script => !script.variables.length && !script.extensionIDs?.length &&
@@ -63,6 +66,8 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
         document: Document;
         close(): void;
         duplicate?: () => void;
+        relationFocus?: ScriptEndpoint;
+        relationSignature?: string;
         closeNativeField?: () => void;
         fieldAction?: {request: number; blockId: string; name: string; value: string;
             editor: ProgrammaticExtensionField; panel: FieldActionPanel; submitted?: boolean};
@@ -80,6 +85,7 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
     let lease = 0;
     let projecting = false;
     let disposed = false;
+    let relationsPending = false;
     let canDuplicate = false;
     let flushRequest = 0;
     const flushes = new Set<{request: number; waiting: Set<CodeView>; resolve(): void}>();
@@ -95,10 +101,27 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
     const dynamicShapesFor = target => getCodeDynamicShapes(vm.runtime, target);
     const projection = (target, xml = workspaceXML(vm, target)) => ({
         ...histories.get(target).state, xml, dynamicShapes: dynamicShapesFor(target),
+        blocks: target.blocks._blocks,
+        scriptRelations: readScriptRelations(vm.runtime.targets.filter(selectable)),
         nativeFieldGraphics: vm.editingTarget === target ? projectNativeFieldGraphics(vm.runtime, target, workspace) : []
     });
     const extensionsFor = target => getCodeExtensions(vm.runtime, target);
-    const send = (view, message) => view.port.postMessage(message);
+    const send = (view, message) => {
+        if (message.scriptRelations) view.relationSignature = JSON.stringify(message.scriptRelations);
+        view.port.postMessage(message);
+    };
+
+    function updateRelations() {
+        if (relationsPending || !views.size) return;
+        relationsPending = true;
+        queueMicrotask(() => {
+            relationsPending = false;
+            if (disposed || !views.size) return;
+            const scriptRelations = readScriptRelations(vm.runtime.targets.filter(selectable));
+            const signature = JSON.stringify(scriptRelations);
+            for (const view of views) if (view.relationSignature !== signature) send(view, {type: 'relations', scriptRelations});
+        });
+    }
 
     function updateCatalog() {
         const targets = vm.runtime.targets.filter(selectable).map(target => {
@@ -143,8 +166,11 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
         const data = projection(target, xml);
         for (const view of views) {
             if (view.target !== target) continue;
-            send(view, view === source ? {type: 'history', ...histories.get(target).state} : {type: 'update', ...data});
+            // The editing source must keep its live fields and queued edits; only other views reload XML.
+            send(view, view === source ? {type: 'history', ...histories.get(target).state,
+                blocks: data.blocks, scriptRelations: data.scriptRelations} : {type: 'update', ...data});
         }
+        updateRelations();
     }
 
     function flushParent() {
@@ -196,6 +222,11 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
         view.target = target;
         if (!histories.has(target)) histories.set(target, createHistory(target, vm.runtime.getTargetForStage()));
         send(view, {type: 'target', targetId: target.id, extensions: extensionsFor(target), ...projection(target)});
+        if (view.relationFocus?.targetId === target.id) {
+            const {blockId, scriptId} = view.relationFocus;
+            view.relationFocus = undefined;
+            send(view, {type: 'relation-focus', blockId, scriptId});
+        }
     }
 
     function grant() {
@@ -470,6 +501,25 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
                 accept: supportsSharedHistory, commit: apply => queueDrop(target, apply)});
             return;
         }
+        if (message.type === 'relation-navigate') {
+            if (view.draining || !viewFocused(view) || !exists(view.target)) return;
+            const endpoint = {targetId: message.targetId, blockId: message.blockId, scriptId: message.scriptId};
+            const matches = candidate => candidate && candidate.targetId === endpoint.targetId &&
+                candidate.blockId === endpoint.blockId && candidate.scriptId === endpoint.scriptId;
+            // Navigation is limited to an existing endpoint related to this window's target.
+            if (!readScriptRelations(vm.runtime.targets.filter(selectable)).some(relation =>
+                (relation.source.targetId === view.target.id || relation.destination?.targetId === view.target.id) &&
+                (matches(relation.source) || matches(relation.destination)))) return;
+            const target = vm.runtime.getTargetById(endpoint.targetId);
+            if (!selectable(target)) return;
+            if (target === view.target) send(view, {type: 'relation-focus', blockId: endpoint.blockId, scriptId: endpoint.scriptId});
+            else {
+                view.relationFocus = endpoint;
+                pending = view;
+                retarget(view, target);
+            }
+            return;
+        }
         if (!owns(view, message)) return;
         if (message.type === 'field-editor' || message.type === 'field-action') {
             handleFieldAction(view, message);
@@ -561,6 +611,7 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
     }
 
     function targetsUpdated() {
+        updateRelations();
         if (views.size) updateCatalog();
         for (const view of views) if (!exists(view.target)) view.close();
         for (const target of histories.keys()) if (!exists(target)) histories.delete(target);
@@ -648,6 +699,7 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
     vm.on('workspaceUpdate', flushWorkspaceProjection);
     vm.on('EXTENSION_ADDED', extensionsUpdated);
     vm.on('BLOCKSINFO_UPDATE', extensionsUpdated);
+    vm.runtime.on?.('PROJECT_CHANGED', updateRelations);
 
     return {attach, flush, setCanDuplicate(available) {
         if (available === canDuplicate) return;
@@ -670,6 +722,7 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
         parent.removeEventListener('focus', parentFocus);
         vm.removeListener('targetsUpdate', targetsUpdated);
         vm.removeListener('workspaceUpdate', flushWorkspaceProjection);
+        vm.runtime.removeListener?.('PROJECT_CHANGED', updateRelations);
         vm.removeListener('EXTERNAL_BLOCKS_RELOADED', externalBlocksReloaded);
         vm.removeListener('EXTENSION_ADDED', extensionsUpdated);
         vm.removeListener('BLOCKSINFO_UPDATE', extensionsUpdated);

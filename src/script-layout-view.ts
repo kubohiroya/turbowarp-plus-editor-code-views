@@ -3,6 +3,7 @@ import {paintScripts, readScripts, type LayoutWorkspace} from './script-layout-w
 import {openRearrangement, type RearrangementContext} from './script-layout-dialog.ts';
 import {attachScriptViewMenu, type ScriptViewMenuBlocks, type ScriptViewMenuWorkspace} from './script-view-menu.ts';
 import type {PresentationElements} from './preview-chrome.ts';
+import {attachScriptArrows, type ScriptRelationContext} from './script-arrows.ts';
 
 export type ScriptView = 'free' | 'z' | 'n';
 
@@ -15,6 +16,7 @@ interface ViewOptions {
     canShowBlock?(): boolean;
     onChange?(view: ScriptView): void;
     hasWorkspaceMenu?(): boolean;
+    relations?: ScriptRelationContext;
 }
 
 const choices = [
@@ -24,7 +26,8 @@ const choices = [
 ] as const;
 
 export function attachScriptView({
-    workspace, ScratchBlocks, getLocale, mount, initialView = 'free', canShowBlock, onChange, hasWorkspaceMenu = () => true
+    workspace, ScratchBlocks, getLocale, mount, initialView = 'free', canShowBlock, onChange, hasWorkspaceMenu = () => true,
+    relations: relationContext
 }: ViewOptions) {
     const injection = workspace.getInjectionDiv();
     const host = mount ?? injection;
@@ -40,7 +43,10 @@ export function attachScriptView({
     let view = initialView;
     let frame: number | undefined;
     const svg = workspace.getParentSvg();
-    const observer = new window.MutationObserver(update);
+    const observer = new window.MutationObserver(records => {
+        if (records.some(record => !(record.target as Element).closest?.('[data-script-relation-layer]'))) update();
+    });
+    const relations = relationContext && attachScriptArrows({workspace, getLocale, ...relationContext});
     const japanese = () => /^ja(?:-|$)/i.test(getLocale());
 
     function labels() {
@@ -78,6 +84,7 @@ export function attachScriptView({
             surface.style.setProperty('--tw-script-view-right', !horizontal && bounds.right >= right - 2 ? `${bounds.width}px` : '0px');
         }
         paintScripts(contents, arrangeScripts(readScripts(workspace), view, 'vertical'), workspace.scale || 1);
+        relations?.setProjection(contents.querySelector('svg'));
     }
 
     function update() {
@@ -92,7 +99,10 @@ export function attachScriptView({
         surface.hidden = view === 'free';
         svg.toggleAttribute('data-script-serial', view !== 'free');
         labels();
-        if (view === 'free') contents.replaceChildren();
+        if (view === 'free') {
+            relations?.setProjection(null);
+            contents.replaceChildren();
+        }
         else {
             observer.observe(workspace.getCanvas(), {attributes: true, childList: true, subtree: true});
             surface.scrollTo(0, 0);
@@ -124,6 +134,7 @@ export function attachScriptView({
     setView(initialView);
     return {
         update,
+        relations,
         labels,
         get view() { return view; },
         setView,
@@ -133,6 +144,7 @@ export function attachScriptView({
             language.disconnect();
             if (frame !== undefined) window.cancelAnimationFrame(frame);
             menu.dispose();
+            relations?.dispose();
             surface.remove();
             svg.removeAttribute('data-script-serial');
         }
@@ -173,7 +185,8 @@ export function attachDockedScriptLayout({vm, workspace, ScratchBlocks, canUse, 
             (!group || group.classList.contains('dv-active-group')));
     };
     const view = attachScriptView({workspace, ScratchBlocks, getLocale: () => injection.ownerDocument.documentElement.lang || locale,
-        canShowBlock: canArrange});
+        canShowBlock: canArrange, relations: {vm: vm as ScriptRelationContext['vm'],
+            getTarget: () => vm.editingTarget as ReturnType<ScriptRelationContext['getTarget']>}});
     host.setAttribute('data-code-hover-surface', '');
     let dialog: ReturnType<typeof openRearrangement> | undefined;
     const attachment = {

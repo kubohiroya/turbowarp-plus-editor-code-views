@@ -15,10 +15,21 @@ function setup() {
         },
         focusScript() {}
     } as never;
-    return {adapter: createCodePaneAdapter(vm, 'en'), reads: () => reads};
+    return {adapter: createCodePaneAdapter(vm, 'en'), reads: () => reads, vm};
 }
 
 const pane = (section = 0) => ({id: 'view-1', targetId: 'hero', section});
+
+test('following an arrow preserves normal mode and updates an existing one-script pane across restores', () => {
+    const {adapter, vm} = setup();
+    adapter.restore(pane());
+    getCodeSession(vm).changed({targetId: 'hero', blockId: 'call', scriptId: 'destination'});
+    assert.equal(adapter.focusedScript('view-1'), undefined, 'normal mode still shows all scripts');
+    adapter.focusPane('view-1', 'original');
+    getCodeSession(vm).changed({targetId: 'hero', blockId: 'call', scriptId: 'destination'});
+    adapter.restore(pane());
+    assert.equal(adapter.focusedScript('view-1'), 'destination', 'returning to the pane keeps the navigated script');
+});
 
 test('a tab keeps the zoom, scroll position and script view of its code area', () => {
     const {adapter} = setup();

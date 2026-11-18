@@ -41,7 +41,9 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
     let pending: {frame: number; pane: Pane; presentation: Presentation} | undefined;
     // The GUI can attach the code area again, with a new bridge; the view it is in still shows its script.
     let attached = session.bridge;
-    session.subscribe(() => {
+    session.subscribe(navigation => {
+        const focus = current === undefined ? undefined : focused.get(current);
+        if (navigation && focus) focus.scriptId = navigation.scriptId;
         if (session.bridge === attached) return;
         attached = session.bridge;
         if (current !== undefined) applyFocus(current);

@@ -6,6 +6,8 @@ import {decodeEdit, encodeEdit, isCommentEdit} from './protocol.ts';
 import {captureCodePreviewChrome} from './preview-chrome.ts';
 import type {PresentationElements} from './preview-chrome.ts';
 import {attachScriptView, getDockedScriptLayout, type ScriptView} from './script-layout-view.ts';
+import {attachScriptArrows, registerScriptRelationNavigation} from './script-arrows.ts';
+import type {RelationBlock, ScriptEndpoint} from './script-relations.ts';
 
 export type AttachPreviewMinimap = (workspace, ScratchBlocks, watermark: HTMLElement) => {dispose(): void};
 /** Adds the code area's zoom buttons and minimap to another workspace. */
@@ -25,8 +27,8 @@ export interface Presentation {
 interface CodeSession {
     frontView: {target: object; mount: HTMLElement; presentation?: Presentation} | null;
     bridge: ReturnType<typeof attachCodeWorkspace> | null;
-    subscribe(listener: () => void): () => void;
-    changed(): void;
+    subscribe(listener: (navigation?: ScriptEndpoint) => void): () => void;
+    changed(navigation?: ScriptEndpoint): void;
 }
 
 const sessions = new WeakMap<object, CodeSession>();
@@ -34,7 +36,7 @@ const sessions = new WeakMap<object, CodeSession>();
 export function getCodeSession(vm: object) {
     let session = sessions.get(vm);
     if (!session) {
-        const listeners = new Set<() => void>();
+        const listeners = new Set<(navigation?: ScriptEndpoint) => void>();
         session = {
             bridge: null,
             frontView: null,
@@ -42,8 +44,8 @@ export function getCodeSession(vm: object) {
                 listeners.add(listener);
                 return () => listeners.delete(listener);
             },
-            changed() {
-                for (const listener of listeners) listener();
+            changed(navigation) {
+                for (const listener of listeners) listener(navigation);
             }
         };
         sessions.set(vm, session);
@@ -595,6 +597,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
             const minimap = attachMinimap?.(preview, blocks, watermark);
             const scriptView = attachScriptView({workspace: preview, ScratchBlocks: blocks, mount: chrome.parentElement,
                 getLocale: () => locale ?? workspace.getInjectionDiv().ownerDocument.documentElement.lang,
+                relations: {vm, getTarget: () => target},
                 initialView: view.scriptView ?? presentation?.scriptView,
                 onChange: next => {
                     if (presentation) presentation.scriptView = next;
@@ -680,6 +683,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
         },
         dispose() {
             blockDrag.dispose();
+            unregisterRelationNavigation();
             unregisterCodeWorkspace();
             shown?.disconnect();
             visibility.dispose();
@@ -707,6 +711,19 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
 
     const blockDrag = attachBlockDrag({vm, workspace, ScratchBlocks: blocks, onError, prepareImport: bridge.prepareImport});
     const visibility = attachScriptVisibility({vm, blocks, workspace, homeDocument, onError});
+    const unregisterRelationNavigation = registerScriptRelationNavigation(vm, endpoint => {
+        if (vm.runtime.getTargetById(endpoint.targetId)?.blocks._blocks[endpoint.blockId] === undefined) return;
+        if (vm.editingTarget?.id !== endpoint.targetId) vm.setEditingTarget(endpoint.targetId);
+        view.requestAnimationFrame(() => {
+            if (session.bridge !== bridge) return;
+            // Let a target switch restore that pane's mode first. Normal views keep showing all scripts.
+            if (visibility.focusedScript) {
+                visibility.focus(endpoint.scriptId);
+                session.changed(endpoint);
+            }
+            workspace.centerOnBlock(endpoint.scriptId);
+        });
+    });
     visibility.paint();
     session.bridge = bridge;
     vm.runtime.on('PROJECT_CHANGED', changed);
@@ -717,7 +734,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
 type ProcedureTarget = CodeTarget & {
     id: string;
     blocks: CodeTarget['blocks'] & {
-        _blocks: Record<string, {topLevel?: boolean; mutation?: Record<string, unknown>}>;
+        _blocks: Record<string, RelationBlock>;
         blockToXML(id: string, comments: CodeTarget['comments']): string;
         blocklyListen(event: object): void;
     };
@@ -994,6 +1011,8 @@ function attachProcedureEditor({vm, blocks, workspace, options, onError, homeDoc
     };
     document.addEventListener('pointerdown', releaseFocus, true);
     vm.runtime.on('PROJECT_CHANGED', scheduleLoad);
+    const relations = attachScriptArrows({workspace: editor, vm, getTarget: () => target,
+        getLocale: () => locale});
     load();
 
     // In a modal dialog the rest of the page is inert, including the text and dropdown editors
@@ -1011,6 +1030,7 @@ function attachProcedureEditor({vm, blocks, workspace, options, onError, homeDoc
         },
         dispose() {
             toolboxListeners.delete(refreshPalette);
+            relations.dispose();
             navigation?.dispose();
             element.removeAttribute('data-code-hover-surface');
             element.removeAttribute('data-hover-palette');
