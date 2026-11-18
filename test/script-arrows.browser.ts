@@ -143,6 +143,98 @@ test('panning reuses internal arrows and anchors while keeping remote links at t
     await page.close();
 });
 
+test('arrows keep their real endpoints when only the caller or receiver is on screen', async () => {
+    const {page, errors} = await open();
+    try {
+        const inspect = () => page.evaluate(() => {
+            const f = (globalThis as any).fixture;
+            const viewport = f.workspace.getParentSvg().getBoundingClientRect();
+            const edge = (id: string, destination: string) => {
+                const group = document.querySelector(`[data-source-call="${id}"][data-destination-block="${destination}"]`);
+                const line = group?.querySelector<SVGPathElement>('.tw-script-relation-line');
+                const matrix = line?.getScreenCTM();
+                const start = line && line.getPointAtLength(0);
+                const end = line && line.getPointAtLength(line.getTotalLength());
+                return group ? {external: group.hasAttribute('data-script-external'),
+                    path: line?.getAttribute('d'),
+                    startX: new DOMPoint(start.x, start.y).matrixTransform(matrix).x,
+                    endX: new DOMPoint(end.x, end.y).matrixTransform(matrix).x} : null;
+            };
+            return {call: edge('call-1', 'definition'), message: edge('send', 'receive'),
+                recursive: edge('recursive', 'definition'),
+                right: viewport.right,
+                callerHidden: f.workspace.getBlockById('start').getSvgRoot().style.display === 'none',
+                receiverHidden: f.workspace.getBlockById('receive').getSvgRoot().style.display === 'none'};
+        });
+        await page.evaluate(async () => {
+            const f = (globalThis as any).fixture;
+            await f.move('definition', 1600, 0);
+            await f.move('receive', 1600, 0);
+            f.workspace.intersectionObserver.checkForIntersections();
+            await f.settle();
+        });
+        const outgoing = await inspect();
+        assert.equal(outgoing.receiverHidden, true, 'native culling still hides the offscreen block');
+        assert.equal(outgoing.call?.external, false, 'a visible caller keeps the actual offscreen definition');
+        assert.equal(outgoing.message?.external, false, 'a visible sender keeps the actual offscreen receiver');
+        assert.ok(outgoing.call.endX > outgoing.right + 1000 && outgoing.message.endX > outgoing.right + 1000,
+            'arrowheads extend to the real offscreen definitions and receivers');
+        assert.equal(outgoing.recursive, null, 'a relation with both blocks offscreen is omitted');
+        await page.evaluate(async () => {
+            const f = (globalThis as any).fixture;
+            await f.move('definition', -1600, 0);
+            await f.move('receive', -1600, 0);
+            await f.moveStart(1600, 0);
+            f.workspace.intersectionObserver.checkForIntersections();
+            await f.settle();
+        });
+        const incoming = await inspect();
+        assert.equal(incoming.callerHidden, true);
+        assert.equal(incoming.call?.external, false, 'a visible definition keeps the actual offscreen caller');
+        assert.equal(incoming.message?.external, false, 'a visible receiver keeps the actual offscreen sender');
+        assert.ok(incoming.call.startX > incoming.right && incoming.message.startX > incoming.right,
+            'incoming arrow tails retain the offscreen callers and senders');
+        assert.notEqual(incoming.call?.path, outgoing.call?.path);
+        assert.deepEqual(errors, []);
+    } finally {await page.close();}
+});
+
+test('panning updates endpoint visibility even when native culling leaves the block SVGs mounted', async () => {
+    const {page, errors} = await open();
+    try {
+        await page.evaluate(async () => {
+            const f = (globalThis as any).fixture;
+            for (const block of f.workspace.getTopBlocks(false)) f.workspace.intersectionObserver.unobserve(block);
+            f.arrows.setVisibility({function: true, message: false});
+            await f.moveStart(-700, 0);
+            await f.move('definition', 1400, 0);
+            const path = f.workspace.getBlockById('call-1').getSvgRoot().querySelector('.blocklyPath');
+            const read = path.getScreenCTM;
+            (globalThis as any).panAnchorReads = 0;
+            path.getScreenCTM = function () {(globalThis as any).panAnchorReads++; return read.call(this);};
+        });
+        assert.equal(await relation(page).count(), 0, 'both endpoints are outside even if the curve crosses the viewport');
+        const pan = (x: number) => page.evaluate(async value => {
+            const w = (globalThis as any).fixture.workspace;
+            w.translate(value, 0);
+            await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        }, x);
+        await pan(900);
+        const calls = page.locator('[data-script-relation-layer] > [data-source-call="call-1"]');
+        assert.equal(await calls.count(), 1, 'panning the source into view restores the arrow');
+        assert.equal(await calls.getAttribute('data-script-external'), null);
+        assert.equal(await relation(page, 'function').count(), 2);
+        await pan(-1200);
+        assert.equal(await calls.count(), 1, 'the destination alone keeps the incoming arrow');
+        assert.equal(await relation(page, 'function').count(), 3, 'the now-visible recursive definition is included');
+        await pan(310);
+        assert.equal(await relation(page).count(), 0, 'panning both endpoints out removes the arrows again');
+        assert.equal(await page.evaluate(() => (globalThis as any).panAnchorReads), 0,
+            'viewport transitions reuse measured endpoints instead of reading block geometry again');
+        assert.deepEqual(errors, []);
+    } finally {await page.close();}
+});
+
 test('moving an unrelated script keeps existing relationship lines in place', async () => {
     const {page, errors} = await open();
     const same = await page.evaluate(async () => {

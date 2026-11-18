@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 import React from 'react';
 
-export function createContextMenuIcons({enabled, addonMessages, styles}: {
+export function createContextMenuIcons({enabled, addonMessages, styles, renderSectionIcon, createSectionIcon}: {
     enabled: boolean; addonMessages: Record<string, string>; styles: Record<string, string>;
+    renderSectionIcon?(section: 'functions' | 'calls', className: string): React.ReactNode;
+    createSectionIcon?(document: Document, section: 'functions' | 'calls', className: string): SVGSVGElement;
 }) {
     const paths = {
         open: 'M13 4h7v7m0-7-9 9m-1-8H4v15h15v-6',
@@ -118,7 +120,8 @@ export function createContextMenuIcons({enabled, addonMessages, styles}: {
         return actions[id];
     };
 
-    const renderMenuIcon = action => paths[action] ? React.createElement('svg', {
+    const renderMenuIcon = action => (action === 'functions' || action === 'calls') && renderSectionIcon ?
+        renderSectionIcon(action, styles.icon) : paths[action] ? React.createElement('svg', {
         className: styles.icon, 'aria-hidden': 'true', focusable: 'false', viewBox: '0 0 24 24'
     }, React.createElement('path', {d: paths[action]})) : null;
 
@@ -128,6 +131,9 @@ export function createContextMenuIcons({enabled, addonMessages, styles}: {
     const installed = new WeakSet();
 
     function createContextMenuIcon (document, action) {
+        if ((action === 'functions' || action === 'calls') && createSectionIcon) {
+            return createSectionIcon(document, action, styles.icon);
+        }
         if (!Object.hasOwn(paths, action)) return null;
         const icon = document.createElementNS(svgNamespace, 'svg');
         icon.setAttribute('class', styles.icon);

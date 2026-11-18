@@ -427,26 +427,64 @@ export function readScriptRelationGraph(targets: readonly RelationTarget[], Scra
 /**
  * Add “Show this function” at the top of the menu of every block that calls a function, in the code area and
  * in the script editors. `find` names the function a block calls, if any; `open` shows it.
+ * With `scriptEditor`, free-layout blocks first offer to edit their own containing script.
  */
-export function attachFunctionCallMenu(ScratchBlocks, {label, find, open}: {
+export function attachFunctionCallMenu(ScratchBlocks, {label, find, open, scriptEditor}: {
     label(): string;
     find(blockId: string): string | undefined;
     open(functionId: string): void;
+    scriptEditor?: {vm: any; locale: string;
+        open(scriptId: string, blockId: string, section: 'functions' | 'calls'): void};
 }) {
     const prototype = ScratchBlocks.BlockSvg.prototype;
     const showContextMenu = prototype.showContextMenu_;
     const patched = function (event) {
         const functionId = this.isInFlyout ? undefined : find(this.id);
-        if (!functionId) return showContextMenu.call(this, event);
+        const target = scriptEditor?.vm.editingTarget;
+        const layout = scriptEditor && getDockedScriptLayout(scriptEditor.vm);
+        const script = scriptEditor && !this.isInFlyout && !this.workspace.options.readOnly &&
+            this.workspace === ScratchBlocks.getMainWorkspace?.() && layout?.view.view === 'free' &&
+            layout.canArrange() && !getCodeSession(scriptEditor.vm).bridge?.focusedScript ? this.getRootBlock() : undefined;
+        const scriptId = script && target?.blocks._blocks[script.id] ? script.id : undefined;
+        if (!functionId && !scriptId) return showContextMenu.call(this, event);
+        const blockId = this.id;
+        const japanese = scriptEditor && /^ja(?:-|$)/i.test(scriptEditor.locale);
+        const scriptOptions = scriptId ? [
+            {section: 'functions' as const, text: japanese ?
+                'このスクリプトを個別の画面で編集する' : 'Edit this script in a separate view'},
+            {section: 'calls' as const, text: japanese ?
+                'このスクリプトの呼び出し関係を開く' : 'Open relationships for this script'}
+        ].map(({section, text}) => ({text, twPlusMenuIcon: section, separator: false, enabled: true, callback() {
+            if (scriptEditor.vm.editingTarget === target && target.blocks._blocks[scriptId]) {
+                scriptEditor.open(scriptId, blockId, section);
+            }
+        }})) : [];
         const owned = Object.prototype.hasOwnProperty.call(this, 'customContextMenu');
         const custom = this.customContextMenu;
         this.customContextMenu = function (options) {
             custom?.call(this, options);
-            options.unshift({text: label(), enabled: true, callback: () => open(functionId)});
+            if (functionId) options.unshift({text: label(), enabled: true, callback: () => open(functionId)});
+            options.unshift(...scriptOptions);
+        };
+        const {ContextMenu} = ScratchBlocks;
+        const populate = scriptOptions.length ? ContextMenu.populate_ : undefined;
+        if (scriptOptions.length) ContextMenu.populate_ = function (options, rtl) {
+            // Addons reorder ContextMenu.show's options after customContextMenu. Prioritize the final list,
+            // in place so their separator indices and the host's icon decoration still use the same order.
+            for (const priority of [...scriptOptions].reverse()) {
+                const index = options.findIndex(option => option.callback === priority.callback);
+                if (index > 0) options.unshift(...options.splice(index, 1));
+            }
+            for (const option of scriptOptions) option.separator = false;
+            if (options.length > 2) options[2].separator = true;
+            const menu = populate.call(this, options, rtl);
+            menu.getChildAt(2)?.getElement().classList.add('tw-script-editor-menu-divider');
+            return menu;
         };
         try {
             return showContextMenu.call(this, event);
         } finally {
+            if (scriptOptions.length) ContextMenu.populate_ = populate;
             if (owned) this.customContextMenu = custom;
             else delete this.customContextMenu;
         }

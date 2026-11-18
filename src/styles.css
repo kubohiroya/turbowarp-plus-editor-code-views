@@ -603,17 +603,19 @@
     stroke-opacity: 1;
 }
 
+.tw-script-editor-menu-divider {
+    border-top: 1px solid var(--ui-black-transparent, rgb(0 0 0 / 15%));
+    margin-block-start: 4px;
+}
+
 .tw-script-relation-script-highlight {
     fill: light-dark(#3373cc, #93c5fd);
     fill-opacity: 0.1;
-    stroke: light-dark(#2563a8, #93c5fd);
-    stroke-width: 2;
-    vector-effect: non-scaling-stroke;
+    stroke: none;
     pointer-events: none;
 }
 
 .tw-script-relation-script-highlight[data-emphasis="source"] {
-    stroke-width: 3;
     fill-opacity: 0.15;
 }
 
