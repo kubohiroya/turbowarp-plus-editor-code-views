@@ -40,9 +40,14 @@ export interface RenderedScript extends ScriptBounds {
 export function readScripts(workspace: LayoutWorkspace): RenderedScript[] {
     return workspace.getTopBlocks(false).flatMap(block => {
         const root = block.getSvgRoot();
-        if (!root || !workspace.getCanvas().contains(root)) return [];
+        if (!root || !workspace.getCanvas().contains(root) || root.hasAttribute('data-tw-plus-hidden')) return [];
         const origin = block.getRelativeToSurfaceXY();
-        const {topLeft, bottomRight} = block.getBoundingRectangle();
+        let {topLeft, bottomRight} = block.getBoundingRectangle();
+        if (root.querySelector(':scope > [data-tw-plus-folded-mark]')) {
+            const box = (root as SVGGraphicsElement).getBBox();
+            topLeft = {x: origin.x + box.x, y: origin.y + box.y};
+            bottomRight = {x: topLeft.x + box.width, y: topLeft.y + box.height};
+        }
         return [{
             id: block.id, block, root, origin, ...topLeft,
             width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y

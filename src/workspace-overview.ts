@@ -1,3 +1,5 @@
+import {getScriptProjection} from './script-projection.ts';
+
 type OverviewOptions = {
     workspace: any;
     ScratchBlocks: any;
@@ -44,23 +46,42 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     function refreshShapes() {
         const retained = new Set<string>();
         const additions = document.createDocumentFragment();
-        for (const block of workspace.getAllBlocks(false)) {
-            const root = block.getSvgRoot() as SVGElement | null;
-            if (!root || !canvas.contains(root) || root.closest('[data-tw-plus-hidden]')) continue;
-            const source = root.querySelector(':scope > .blocklyPath');
-            const data = source?.getAttribute('d');
-            if (!data) continue;
-            retained.add(block.id);
-            let path = paths.get(block.id);
+        const paint = (id: string, data: string, fill: string, transform: string) => {
+            retained.add(id);
+            let path = paths.get(id);
             if (!path) {
                 path = element('path');
-                paths.set(block.id, path);
+                paths.set(id, path);
                 additions.append(path);
             }
-            const position = block.getRelativeToSurfaceXY();
             attribute(path, 'd', data);
-            attribute(path, 'fill', source.getAttribute('fill') || block.getColour());
-            attribute(path, 'transform', `translate(${position.x} ${position.y})${block.RTL ? ' scale(-1 1)' : ''}`);
+            attribute(path, 'fill', fill);
+            attribute(path, 'transform', transform);
+        };
+        const projection = getScriptProjection(workspace);
+        if (projection) {
+            const inverse = projection.svg.getScreenCTM()?.inverse();
+            if (inverse) for (const source of projection.svg.querySelectorAll<SVGPathElement>('.blocklyPath')) {
+                if (source.closest('[data-tw-plus-hidden]')) continue;
+                const id = source.closest('[data-id]')?.getAttribute('data-id');
+                const data = source.getAttribute('d');
+                const matrix = source.getScreenCTM();
+                if (!id || !data || !matrix) continue;
+                const transform = inverse.multiply(matrix);
+                paint(id, data, source.getAttribute('fill') || view.getComputedStyle(source).fill,
+                    `matrix(${transform.a} ${transform.b} ${transform.c} ${transform.d} ${transform.e} ${transform.f})`);
+            }
+        } else {
+            for (const block of workspace.getAllBlocks(false)) {
+                const root = block.getSvgRoot() as SVGElement | null;
+                if (!root || !canvas.contains(root) || root.closest('[data-tw-plus-hidden]')) continue;
+                const source = root.querySelector(':scope > .blocklyPath');
+                const data = source?.getAttribute('d');
+                if (!data) continue;
+                const position = block.getRelativeToSurfaceXY();
+                paint(block.id, data, source.getAttribute('fill') || block.getColour(),
+                    `translate(${position.x} ${position.y})${block.RTL ? ' scale(-1 1)' : ''}`);
+            }
         }
         for (const [id, path] of paths) if (!retained.has(id)) {path.remove(); paths.delete(id);}
         if (additions.childNodes.length) shapes.append(additions);
@@ -73,12 +94,17 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
         const metrics = workspace.isVisible() && workspace.getMetrics();
         if (!metrics || metrics.viewWidth <= 32 || metrics.viewHeight <= 32) {map.toggleAttribute('hidden', true); return;}
         const scale = workspace.scale;
-        const x = metrics.viewLeft / scale, y = metrics.viewTop / scale;
-        const width = metrics.viewWidth / scale, height = metrics.viewHeight / scale;
+        const projection = getScriptProjection(workspace);
+        const x = projection ? projection.surface.scrollLeft / scale : metrics.viewLeft / scale;
+        const y = projection ? projection.surface.scrollTop / scale : metrics.viewTop / scale;
+        const width = (projection ? projection.surface.clientWidth : metrics.viewWidth) / scale;
+        const height = (projection ? projection.surface.clientHeight : metrics.viewHeight) / scale;
         const content = metrics.contentWidth > 0 && metrics.contentHeight > 0;
-        const area = content ? {x: metrics.contentLeft / scale, y: metrics.contentTop / scale,
+        const box = projection?.svg.viewBox.baseVal;
+        const area = box ? {x: box.x, y: box.y, width: Math.max(box.width, width), height: Math.max(box.height, height)} :
+            content ? {x: metrics.contentLeft / scale, y: metrics.contentTop / scale,
             width: metrics.contentWidth / scale, height: metrics.contentHeight / scale} : {x, y, width, height};
-        if (!workspace.scrollbar && content) {
+        if (!projection && !workspace.scrollbar && content) {
             const right = Math.max(x + width, area.x + area.width), bottom = Math.max(y + height, area.y + area.height);
             area.x = Math.min(x, area.x); area.y = Math.min(y, area.y);
             area.width = right - area.x; area.height = bottom - area.y;
@@ -98,8 +124,8 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
         // All layout reads above precede writes. Identical values do not invalidate the editor's styles.
         if (needsShapes) refreshShapes();
         map.toggleAttribute('hidden', false);
-        const box = `${area.x} ${area.y} ${area.width} ${area.height}`;
-        attribute(map, 'viewBox', box); attribute(clip, 'viewBox', box);
+        const viewBox = `${area.x} ${area.y} ${area.width} ${area.height}`;
+        attribute(map, 'viewBox', viewBox); attribute(clip, 'viewBox', viewBox);
         for (const [name, value] of Object.entries(area)) attribute(clip, name, value);
         for (const [name, value] of Object.entries({x, y, width, height})) attribute(viewport, name, value);
         style(map, 'width', `${mapWidth}px`); style(map, 'height', `${mapHeight}px`);
@@ -130,10 +156,22 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     const resize = new view.ResizeObserver(schedule);
     resize.observe(container);
     const events = new view.AbortController();
+    let projectedSVG: SVGSVGElement | undefined;
+    container.addEventListener('scriptprojectionchange', () => {
+        const next = getScriptProjection(workspace)?.svg;
+        needsShapes ||= next !== projectedSVG;
+        projectedSVG = next;
+        schedule();
+    }, {signal: events.signal});
     view.addEventListener('resize', schedule, {signal: events.signal});
     view.addEventListener('scroll', schedule, {signal: events.signal, passive: true});
 
     const moveView = (left: number, top: number) => {
+        const projection = getScriptProjection(workspace);
+        if (projection) {
+            projection.surface.scrollTo(left * workspace.scale, top * workspace.scale);
+            return;
+        }
         const metrics = workspace.getMetrics();
         if (!metrics || !workspace.scrollbar) return;
         const clamp = (value: number, maximum: number) => Math.max(0, Math.min(value, Math.max(0, maximum)));
@@ -146,12 +184,14 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     const point = (event: PointerEvent, inverse: DOMMatrix) =>
         new view.DOMPoint(event.clientX, event.clientY).matrixTransform(inverse);
     map.addEventListener('pointerdown', event => {
-        if (!event.isPrimary || event.button !== 0 || pointer || !workspace.scrollbar) return;
+        const projection = getScriptProjection(workspace);
+        if (!event.isPrimary || event.button !== 0 || pointer || (!projection && !workspace.scrollbar)) return;
         const matrix = map.getScreenCTM(), metrics = workspace.getMetrics();
         if (!matrix || !metrics) return;
         const inverse = matrix.inverse();
         pointer = {id: event.pointerId, x: event.clientX, y: event.clientY, start: point(event, inverse), inverse,
-            left: metrics.viewLeft / workspace.scale, top: metrics.viewTop / workspace.scale,
+            left: projection ? projection.surface.scrollLeft / workspace.scale : metrics.viewLeft / workspace.scale,
+            top: projection ? projection.surface.scrollTop / workspace.scale : metrics.viewTop / workspace.scale,
             viewport: event.target === viewport, moved: false};
         map.setPointerCapture(event.pointerId);
     }, {signal: events.signal});
@@ -173,8 +213,9 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
             move(event);
             if (!pointer.moved) {
                 const current = point(event, pointer.inverse), metrics = workspace.getMetrics();
-                if (metrics) moveView(current.x - metrics.viewWidth / (2 * workspace.scale),
-                    current.y - metrics.viewHeight / (2 * workspace.scale));
+                const projection = getScriptProjection(workspace);
+                if (metrics) moveView(current.x - (projection ? projection.surface.clientWidth : metrics.viewWidth) / (2 * workspace.scale),
+                    current.y - (projection ? projection.surface.clientHeight : metrics.viewHeight) / (2 * workspace.scale));
                 ScratchBlocks.hideChaff(true);
             }
         }

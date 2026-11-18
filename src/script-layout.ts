@@ -15,7 +15,8 @@ export type LayoutDirection = 'vertical' | 'horizontal';
 const alignmentTolerance = 24;
 const spacing = 32;
 
-export function arrangeScripts<T extends ScriptBounds>(scripts: readonly T[], order: ScriptOrder, direction: LayoutDirection) {
+export function arrangeScripts<T extends ScriptBounds>(scripts: readonly T[], order: ScriptOrder, direction: LayoutDirection,
+    gap = spacing) {
     const bandAxis = order === 'z' ? 'y' : 'x';
     const scanAxis = order === 'z' ? 'x' : 'y';
     const compare = (a: T, b: T, first: 'x' | 'y', second: 'x' | 'y') =>
@@ -29,12 +30,12 @@ export function arrangeScripts<T extends ScriptBounds>(scripts: readonly T[], or
         else bands.push([script]);
     }
 
-    let offset = spacing;
+    let offset = gap;
     return bands.flatMap(band => band.sort((a, b) => compare(a, b, scanAxis, bandAxis))).map(script => {
         const vertical = direction === 'vertical';
         const x = vertical ? spacing : offset;
         const y = vertical ? offset : spacing;
-        offset += Math.ceil(vertical ? script.height : script.width) + spacing;
+        offset += Math.ceil(vertical ? script.height : script.width) + gap;
         return {script, x, y};
     });
 }

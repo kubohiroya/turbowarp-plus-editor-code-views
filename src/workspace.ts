@@ -222,7 +222,7 @@ function attachScriptVisibility({vm, blocks, workspace, homeDocument, onError}) 
     const labels = () => japanese() ? {fold: '折りたたみ', unfold: '折りたたみを解除', folded: '折りたたみ中'} :
         {fold: 'Fold', unfold: 'Unfold', folded: 'Folded'};
     const vmBlock = (id: string) => vm.editingTarget?.blocks._blocks[id];
-    const isFolded = (block: StackBlock) => isHatBlock(block) && isFoldedDefinition(vmBlock(block.id));
+    const isFolded = (block: StackBlock) => isFoldedDefinition(vmBlock(block.id));
 
     let focus: {id: string; extras: Set<string>; onLost?: () => void} | undefined;
     // The GUI can attach the code area again; what an earlier attachment left on the workspace is not its own.
@@ -404,7 +404,7 @@ function attachScriptVisibility({vm, blocks, workspace, homeDocument, onError}) 
 /** Paint the folded scripts of a read-only workspace, such as the preview of a code view. */
 function paintPreviewFolds(blocks, preview, target, label: string) {
     for (const top of preview.getTopBlocks(false) as StackBlock[]) {
-        paintFold(top, isHatBlock(top) && isFoldedDefinition(target.blocks._blocks[top.id]), label);
+        paintFold(top, isFoldedDefinition(target.blocks._blocks[top.id]), label);
     }
 }
 
@@ -1008,6 +1008,7 @@ function attachProcedureEditor({vm, blocks, workspace, options, onError, homeDoc
 
     return {
         workspace: editor,
+        flush() {blocks.Events.fireNow_();},
         showBlock(id: string) {
             pendingBlock = id;
             reveal();

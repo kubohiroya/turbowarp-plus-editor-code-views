@@ -747,13 +747,48 @@
     display: none;
 }
 
+.tw-script-fold-gutter {
+    position: absolute;
+    z-index: 4;
+    width: 28px;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.tw-script-fold-gutter[hidden] {
+    display: none;
+}
+
+.tw-script-fold-gutter > button {
+    position: absolute;
+    left: 2px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: var(--ui-primary, Canvas);
+    color: var(--text-primary, CanvasText);
+    font: 14px/24px system-ui, sans-serif;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.tw-script-fold-gutter > button:is(:hover, :focus-visible) {
+    background: var(--ui-tertiary, #e5e7eb);
+    outline: 2px solid var(--motion-primary, #4c97ff);
+    outline-offset: -2px;
+}
+
 .blocklySvg[data-script-serial] {
     z-index: 2;
     background: transparent;
     pointer-events: none;
 }
 
-.blocklySvg[data-script-serial] :is(.blocklyMainBackground, .blocklyBlockCanvas, .blocklyBubbleCanvas) {
+.blocklySvg[data-script-serial] :is(.blocklyMainBackground, .blocklyBlockCanvas, .blocklyBubbleCanvas, .blocklyFlyout,
+    .blocklyScrollbarVertical, .blocklyScrollbarHorizontal),
+.injectionDiv:has(> [data-script-serial]) > .blocklyFlyout {
     visibility: hidden;
 }
 
@@ -776,6 +811,44 @@
 
 .tw-script-view-surface[data-can-show-block] [data-script-view-block] {
     cursor: pointer;
+}
+
+.tw-serial-script-editor {
+    position: fixed;
+    inset: 0;
+    box-sizing: border-box;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 1rem;
+    border: 0;
+    background: var(--ui-primary, Canvas);
+    color: var(--text-primary, CanvasText);
+    font: 0.9rem/1.4 system-ui, sans-serif;
+}
+
+.tw-serial-script-editor[open] {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.tw-serial-script-editor > h2 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.tw-serial-script-editor > [data-serial-script-editor] {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+
+.tw-serial-script-editor > button {
+    align-self: flex-end;
+    padding: 0.5rem 1.5rem;
 }
 
 .tw-script-layout-dialog {

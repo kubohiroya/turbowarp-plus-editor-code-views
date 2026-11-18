@@ -5,6 +5,9 @@ import {attachScriptViewMenu, type ScriptViewMenuBlocks, type ScriptViewMenuWork
 import type {PresentationElements} from './preview-chrome.ts';
 import {attachScriptArrows, type ScriptRelationContext, type ScriptRelationVisibility} from './script-arrows.ts';
 import {attachCodeZoomRange} from './code-zoom.ts';
+import {setScriptProjection} from './script-projection.ts';
+import {openSerialScriptEditor} from './serial-script-editor.ts';
+import {isFoldedDefinition, setFoldedDefinition} from './procedure-edits.ts';
 
 export type ScriptView = 'free' | 'z' | 'n';
 
@@ -39,10 +42,15 @@ export function attachScriptView({
     surface.className = 'tw-script-view-surface';
     surface.dataset.codeViewControl = '';
     surface.tabIndex = 0;
-    surface.toggleAttribute('data-can-show-block', Boolean(canShowBlock));
+    surface.toggleAttribute('data-can-show-block', Boolean(canShowBlock || relationContext?.vm));
     const contents = document.createElement('div');
     surface.append(contents);
+    const gutter = document.createElement('div');
+    gutter.className = 'tw-script-fold-gutter';
+    gutter.dataset.codeViewControl = '';
+    const foldButtons = new Map<string, {button: HTMLButtonElement; top: number}>();
     let view = initialView;
+    let editor: ReturnType<typeof openSerialScriptEditor>;
     let frame: number | undefined;
     const svg = workspace.getParentSvg();
     const observer = new window.MutationObserver(records => {
@@ -50,6 +58,69 @@ export function attachScriptView({
     });
     const relations = relationContext && attachScriptArrows({workspace, getLocale, ...relationContext});
     const japanese = () => /^ja(?:-|$)/i.test(getLocale());
+
+    function setFold(ids: string[], value?: boolean) {
+        const target = relationContext?.getTarget();
+        const runtime = relationContext?.vm?.runtime as {emitProjectChanged?(): void} | undefined;
+        if (!target || !runtime?.emitProjectChanged || (canShowBlock && !canShowBlock())) return;
+        for (const id of ids) {
+            const block = target.blocks._blocks[id];
+            if (block) setFoldedDefinition(block, value ?? !isFoldedDefinition(block));
+        }
+        runtime.emitProjectChanged();
+        update();
+    }
+
+    function positionFoldButtons() {
+        gutter.style.left = `${surface.offsetLeft}px`;
+        gutter.style.top = `${surface.offsetTop}px`;
+        gutter.style.height = `${surface.clientHeight}px`;
+        for (const {button, top} of foldButtons.values()) button.style.top = `${top - surface.scrollTop}px`;
+    }
+
+    function paintFoldButtons(placements: ReturnType<typeof arrangeScripts>, scale: number) {
+        const target = relationContext?.getTarget();
+        const ids = new Set(placements.map(({script}) => script.id));
+        for (const [id, {button}] of foldButtons) if (!ids.has(id)) {button.remove(); foldButtons.delete(id);}
+        for (const {script, y} of placements) {
+            let entry = foldButtons.get(script.id);
+            if (!entry) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.dataset.scriptFoldToggle = script.id;
+                button.addEventListener('click', event => {event.stopPropagation(); setFold([script.id]);});
+                button.addEventListener('pointerdown', event => event.stopPropagation());
+                entry = {button, top: 0};
+                foldButtons.set(script.id, entry);
+                gutter.append(button);
+            }
+            const block = target?.blocks._blocks[script.id];
+            const folded = isFoldedDefinition(block);
+            const label = japanese() ? (folded ? '折りたたみを解除' : '折りたたむ') : (folded ? 'Unfold script' : 'Fold script');
+            entry.top = y * scale;
+            entry.button.textContent = folded ? '▶' : '▼';
+            entry.button.disabled = !block || Boolean(canShowBlock && !canShowBlock());
+            entry.button.setAttribute('aria-label', label);
+            entry.button.setAttribute('aria-expanded', String(!folded));
+            entry.button.title = label;
+        }
+        positionFoldButtons();
+    }
+
+    function foldOptions() {
+        const target = relationContext?.getTarget();
+        const runtime = relationContext?.vm?.runtime as {emitProjectChanged?(): void} | undefined;
+        if (view === 'free' || !target || !runtime?.emitProjectChanged || (canShowBlock && !canShowBlock())) return [];
+        const roots = readScripts(workspace).map(script => target.blocks._blocks[script.id]).filter(Boolean);
+        const options = [
+            {value: true, text: japanese() ? 'すべて折りたたむ' : 'Fold all'},
+            {value: false, text: japanese() ? '折りたたみをすべて解除' : 'Unfold all'}
+        ];
+        return options.map(({value, text}) => ({text,
+            enabled: roots.some(block => isFoldedDefinition(block) !== value),
+            callback() {setFold(readScripts(workspace).map(script => script.id), value);}
+        }));
+    }
 
     function labels() {
         const choice = choices.find(choice => choice.view === view);
@@ -63,6 +134,7 @@ export function attachScriptView({
         const ja = japanese();
         return {
             label: ja ? 'コードの並びの見え方を変更する' : 'Change code layout view',
+            options: foldOptions(),
             choices: choices.map(choice => ({
                 text: ja ? choice.jaLabel : choice.label,
                 enabled: true,
@@ -85,8 +157,20 @@ export function attachScriptView({
             surface.style.setProperty('--tw-script-view-left', !horizontal && bounds.left <= left + 2 ? `${bounds.width}px` : '0px');
             surface.style.setProperty('--tw-script-view-right', !horizontal && bounds.right >= right - 2 ? `${bounds.width}px` : '0px');
         }
-        paintScripts(contents, arrangeScripts(readScripts(workspace), view, 'vertical'), workspace.scale || 1);
-        relations?.setProjection(contents.querySelector('svg'));
+        const scale = workspace.scale || 1;
+        const scripts = readScripts(workspace).map(script => {
+            // Include raised hats and labels, and exclude folded bodies, when measuring the visible gap.
+            const box = (script.root as SVGGraphicsElement).getBBox();
+            return {...script, x: script.origin.x + box.x, y: script.origin.y + box.y,
+                width: box.width, height: box.height};
+        });
+        const placements = arrangeScripts(scripts, view, 'vertical', Math.max(64, 48 / scale))
+            .map(placement => ({...placement, x: Math.max(placement.x, 32 / scale)}));
+        paintScripts(contents, placements, scale);
+        paintFoldButtons(placements, scale);
+        const projection = contents.querySelector('svg');
+        relations?.setProjection(projection);
+        setScriptProjection(workspace, {surface, svg: projection});
     }
 
     function update() {
@@ -96,14 +180,20 @@ export function attachScriptView({
 
     function setView(next: ScriptView) {
         menu.close();
+        editor?.dispose();
+        editor = undefined;
         observer.disconnect();
         view = next;
         surface.hidden = view === 'free';
+        gutter.hidden = view === 'free';
         svg.toggleAttribute('data-script-serial', view !== 'free');
         labels();
         if (view === 'free') {
+            setScriptProjection(workspace);
             relations?.setProjection(null);
             contents.replaceChildren();
+            gutter.replaceChildren();
+            foldButtons.clear();
         }
         else {
             observer.observe(workspace.getCanvas(), {attributes: true, childList: true, subtree: true});
@@ -120,19 +210,33 @@ export function attachScriptView({
     surface.addEventListener('click', event => {
         event.stopPropagation();
         const id = (event.target as Element).closest('[data-script-view-block]')?.getAttribute('data-script-view-block');
-        if (!id || !canShowBlock?.()) return;
+        if (!id || (canShowBlock && !canShowBlock())) return;
+        if (relationContext?.vm) {
+            editor?.dispose();
+            editor = openSerialScriptEditor(relationContext.vm, relationContext.getTarget(), id, document, getLocale());
+            if (editor) return;
+        }
+        if (!canShowBlock?.()) return;
         chooseView('free');
         workspace.centerOnBlock(id);
     });
     const resize = new window.ResizeObserver(update);
     resize.observe(host);
-    const language = new window.MutationObserver(labels);
+    const language = new window.MutationObserver(() => {labels(); update();});
     language.observe(document.documentElement, {attributes: true, attributeFilter: ['lang']});
     // The Blockly keyboard listener is document-wide.
     surface.addEventListener('keydown', event => {
         if (event.key !== 'Tab') event.stopPropagation();
     });
-    host.append(surface);
+    gutter.addEventListener('keydown', event => {
+        if (event.key !== 'Tab') event.stopPropagation();
+    });
+    host.append(surface, gutter);
+    surface.addEventListener('scroll', () => {
+        positionFoldButtons();
+        const projection = contents.querySelector('svg');
+        if (view !== 'free' && projection) setScriptProjection(workspace, {surface, svg: projection});
+    }, {passive: true});
     setView(initialView);
     return {
         update,
@@ -141,6 +245,8 @@ export function attachScriptView({
         get view() { return view; },
         setView,
         dispose() {
+            editor?.dispose();
+            setScriptProjection(workspace);
             restoreZoomRange();
             resize.disconnect();
             observer.disconnect();
@@ -149,6 +255,8 @@ export function attachScriptView({
             menu.dispose();
             relations?.dispose();
             surface.remove();
+            gutter.remove();
+            foldButtons.clear();
             svg.removeAttribute('data-script-serial');
         }
     };
