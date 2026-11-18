@@ -4,6 +4,12 @@
 
 The code views of TurboWarp Plus Editor: code in tabs and windows that share one project and one undo history, the block palette detached into its own window, script layout and script views, the function editor, and editing of block fields that extensions draw themselves. Every function takes the VM, the Blockly workspace and `ScratchBlocks` from the host; the package imports no GUI module.
 
+## Opening a selected script
+
+Opening a function or hat fits its rendered script into the pane with 24px of padding. Automatic zoom stays between 50% and 125%, respecting stricter workspace limits. At the lower limit, the script starts below the top padding so a long script remains readable from its beginning. Ordinary edits and manual zoom do not refit it.
+
+Hosts with a separate workspace can call `fitScriptInWorkspace(workspace, scriptId, ScratchBlocks)` from the root or `./sprite-code-windows` export. It returns `false` if the viewport or block is not ready, so the host can retry after layout.
+
 ## Entry points
 
 | Import | Contents |

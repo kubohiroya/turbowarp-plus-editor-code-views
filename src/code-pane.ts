@@ -35,9 +35,9 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
     const focused = new Map<string, {scriptId: string; onLost?: () => void}>();
     // The code pane the code area is in, which shows its script there.
     let current: string | undefined;
-    const applyFocus = (paneId?: string) => {
+    const applyFocus = (paneId?: string, refit = false) => {
         const focus = paneId === undefined ? undefined : focused.get(paneId);
-        session.bridge?.focusScript(focus?.scriptId, focus && (() => focus.onLost?.()));
+        session.bridge?.focusScript(focus?.scriptId, focus && (() => focus.onLost?.()), refit);
     };
     let pending: {frame: number; pane: Pane; presentation: Presentation} | undefined;
     // The GUI can attach the code area again, with a new bridge; the view it is in still shows its script.
@@ -80,7 +80,7 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
         focusPane(paneId: string, scriptId?: string, onLost?: () => void) {
             if (scriptId) focused.set(paneId, {scriptId, onLost});
             else focused.delete(paneId);
-            if (current === paneId) applyFocus(paneId);
+            if (current === paneId) applyFocus(paneId, true);
             // Previews of other views redraw with their script.
             session.changed();
         },
@@ -139,6 +139,8 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
             const frame = requestAnimationFrame(() => {
                 pending = undefined;
                 session.bridge?.restorePane(pane.targetId, presentation);
+                // A picked script owns its initial viewport, including after a saved pane is restored.
+                if (focused.has(pane.id)) applyFocus(pane.id, true);
             });
             pending = {frame, pane, presentation};
         },
