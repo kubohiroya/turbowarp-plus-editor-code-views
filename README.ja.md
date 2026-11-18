@@ -137,3 +137,8 @@ getInfo() {
 - 見出し・区切り・ボタンは、その次のブロックと同じグループに入る。オペコードは `shapes_circle` などのまま変わらないので、SB3 は変わらない。標準の TurboWarp と Scratch は `groups` と `paletteGroup` を無視し、1つのカテゴリとして表示する。
 - ホストは、機能拡張を読み込む前に `installExtensionPaletteGroups(vm.runtime)` を呼び、`extensionPaletteCatalog(vm.runtime._blockInfo)` をストア、`filterToolboxTree`、`usedGroups` に渡す。設定の画面には、そのような機能拡張の項目の `groups` としてグループを渡す。画面は機能拡張の行の中に、グループごとのチェックを出す。
 
+
+## Editor の実装との責務分担
+
+Editor 独自実装の移管元とライセンス確認は [EDITOR-MIGRATION.md](EDITOR-MIGRATION.md) に記録しています。
+追加した公開 API は GUI モジュールを import せず、ホストから必要な値・データ・コールバックを受け取ります。

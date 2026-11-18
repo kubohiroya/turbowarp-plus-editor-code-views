@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-plus-editor-code-views",
-  "version": "0.21.2",
+  "version": "0.21.3-ownership.0",
   "description": "Code views for TurboWarp Plus Editor: code in tabs and windows, the detached block palette, script layout and block field editing",
   "type": "module",
   "license": "MPL-2.0",
@@ -103,7 +103,30 @@
       "default": "./dist/dockview-unsaved.js"
     },
     "./styles.css": "./src/styles.css",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./horizontal-block-palette": {
+      "types": "./dist/horizontal-block-palette.d.ts",
+      "default": "./dist/horizontal-block-palette.js"
+    },
+    "./horizontal-block-palette.css": "./src/horizontal-block-palette.css",
+    "./context-menu-icons": {
+      "types": "./dist/context-menu-icons.d.ts",
+      "default": "./dist/context-menu-icons.js"
+    },
+    "./context-menu-icons.css": "./src/context-menu-icons.css",
+    "./palette-delete-preview": {
+      "types": "./dist/palette-delete-preview.d.ts",
+      "default": "./dist/palette-delete-preview.js"
+    },
+    "./palette-delete-preview.css": "./src/palette-delete-preview.css",
+    "./code-popout": {
+      "types": "./dist/code-popout.d.ts",
+      "default": "./dist/code-popout.js"
+    },
+    "./desktop-code": {
+      "types": "./dist/desktop-code.d.ts",
+      "default": "./dist/desktop-code.js"
+    }
   },
   "files": [
     "dist",
@@ -111,7 +134,8 @@
     "tsconfig.json",
     "README.md",
     "README.ja.md",
-    "LICENSE"
+    "LICENSE",
+    "EDITOR-MIGRATION.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -123,7 +147,7 @@
     "@kubohiroya/turbowarp-script-transfer": "0.1.5"
   },
   "peerDependencies": {
-    "@kubohiroya/turbowarp-extension-security-dialog": ">=0.9.0 <0.10.0",
+    "@kubohiroya/turbowarp-extension-security-dialog": ">=0.9.0 <0.10.0 || 0.9.1-ownership.0",
     "@kubohiroya/turbowarp-plus-editor-windows": ">=0.2.0 <0.3.0",
     "react": ">=16.14",
     "react-dom": ">=16.14"
