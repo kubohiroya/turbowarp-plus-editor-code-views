@@ -41,13 +41,23 @@ const beginDrag = async (page: Page, id: string) => {
 };
 const endDrag = async (page: Page) => {
     await page.mouse.up();
-    await page.mouse.move(1100, 700);
+    // Clear Blockly's ordinary selection after ending the drag, so contextual emphasis can disappear.
+    await page.mouse.click(1100, 700);
     await page.waitForFunction(() => !document.querySelector('[data-script-relation-drag-source], [data-script-relation-related]'));
 };
 const markedScripts = (page: Page) => page.locator('[data-script-relation-related]')
     .evaluateAll(roots => roots.map(root => root.getAttribute('data-id')).sort());
 const strokeStyle = (page: Page, callId: string) => page.locator(`[data-script-relation-layer] > [data-source-call="${callId}"] .tw-script-relation-line`)
     .first().evaluate(line => ({stroke: getComputedStyle(line).stroke, dash: getComputedStyle(line).strokeDasharray}));
+const activateScript = async (page: Page, id: string, scope = '.blocklyBlockCanvas') => {
+    const location = await page.locator(`${scope} [data-id="${id}"] > .blocklyPath`).evaluate(path => {
+        const box = path.getBoundingClientRect();
+        return {x: box.x + box.width / 2, y: box.y + box.height / 2};
+    });
+    // Fields and labels paint over their sibling path; move over the block as a user does.
+    await page.mouse.move(location.x, location.y);
+    await page.evaluate(() => (globalThis as any).fixture.settle());
+};
 
 test('function and message arrows use distinct shared styles behind the blocks without intercepting input', async () => {
     const {page, errors} = await open();
@@ -79,7 +89,8 @@ test('message destinations in other sprites are accessible and send-and-wait kee
     assert.equal(await waiting.locator('.tw-script-relation-wait').count(), 2,
         'the same wait mark appears on local and remote receiver edges');
     assert.equal(await sending.locator('.tw-script-relation-wait').count(), 0);
-    const destination = page.getByRole('button', {name: /Destination: Secondary/}).first();
+    await activateScript(page, 'start');
+    const destination = page.getByRole('button', {name: /Secondary.*go/}).first();
     await destination.click();
     await page.waitForFunction(() => (globalThis as any).fixture.vm.editingTarget.getName() === 'Secondary');
     await page.waitForFunction(() => !document.querySelector('[data-script-relation="function"][data-source-call="call-1"]'));
@@ -88,47 +99,30 @@ test('message destinations in other sprites are accessible and send-and-wait kee
     await page.close();
 });
 
-test('a VM-free child context resolves destination names from its catalog and leaves the zoom corner clear', async () => {
+test('a VM-free child context resolves contextual destination names from its catalog', async () => {
     const {page, errors} = await open();
     await page.evaluate(() => (globalThis as any).fixture.attachCatalogContext());
-    assert.equal(await page.getByRole('button', {name: /Destination: Secondary/}).count(), 2,
+    assert.equal(await page.getByRole('button', {name: /Secondary.*go/}).count(), 0, 'an idle workspace has no destination list');
+    await activateScript(page, 'start');
+    assert.equal(await page.getByRole('button', {name: /Secondary.*go/}).count(), 2,
         'the remote sprite name comes from the injected catalog without a VM');
-    const controls = page.locator('.tw-script-relation-controls');
-    const box = (await controls.boundingBox())!;
-    assert.ok(box.y < 100, 'the controls stay above the lower zoom corner');
-    assert.equal(await controls.evaluate(element => getComputedStyle(element).pointerEvents), 'none');
-    assert.equal(await controls.locator('.tw-script-relation-legend').evaluate(element => getComputedStyle(element).pointerEvents), 'none');
-    assert.equal(await controls.locator('label').evaluate(element => getComputedStyle(element).pointerEvents), 'auto');
-    assert.equal(await controls.locator('button').first().evaluate(element => getComputedStyle(element).pointerEvents), 'auto');
     assert.deepEqual(errors, []);
     await page.close();
 });
 
-test('the arrow controls stay below a horizontal palette, follow its height, and return to the vertical top margin', async () => {
+test('the workspace has no persistent overlay controls, legend or destination list', async () => {
     const {page, errors} = await open();
+    assert.equal(await page.locator('.tw-script-relation-controls, .tw-script-relation-legend').count(), 0);
+    assert.equal(await page.locator('.injectionDiv input[type="checkbox"]').count(), 0);
+    assert.equal(await page.locator('[data-script-relation-guide]:not([hidden])').count(), 0);
     await page.evaluate(() => {
         const toolbox = document.querySelector('.blocklyToolboxDiv') as HTMLElement;
-        toolbox.dataset.testOriginalStyle = toolbox.style.cssText;
         toolbox.setAttribute('data-horizontal-block-palette', '');
         Object.assign(toolbox.style, {position: 'absolute', top: '0px', left: '0px', width: '100%', height: '50px'});
     });
-    const belowPalette = () => page.waitForFunction(() => {
-        const toolbox = document.querySelector('.blocklyToolboxDiv')!.getBoundingClientRect();
-        const controls = document.querySelector('.tw-script-relation-controls')!.getBoundingClientRect();
-        return controls.top >= toolbox.bottom + 9;
-    });
-    await belowPalette();
-    const topAt50 = (await page.locator('.tw-script-relation-controls').boundingBox())!.y;
-    await page.evaluate(() => {(document.querySelector('.blocklyToolboxDiv') as HTMLElement).style.height = '80px';});
-    await belowPalette();
-    const topAt80 = (await page.locator('.tw-script-relation-controls').boundingBox())!.y;
-    assert.ok(Math.abs(topAt80 - topAt50 - 30) < 1, 'palette resizing updates the margin without an explicit redraw');
-    await page.evaluate(() => {
-        const toolbox = document.querySelector('.blocklyToolboxDiv') as HTMLElement;
-        toolbox.removeAttribute('data-horizontal-block-palette');
-        toolbox.style.cssText = toolbox.dataset.testOriginalStyle!;
-    });
-    await page.waitForFunction(() => (document.querySelector('.tw-script-relation-controls') as HTMLElement).style.top === '10px');
+    await page.evaluate(() => (globalThis as any).fixture.settle());
+    assert.equal(await page.locator('.tw-script-relation-controls, .tw-script-relation-legend').count(), 0);
+    assert.equal(await page.locator('[data-script-relation-guide]:not([hidden])').count(), 0);
     assert.deepEqual(errors, []);
     await page.close();
 });
@@ -140,7 +134,8 @@ test('keyboard input on a destination button cannot delete or undo the selected 
         workspace.markFocused();
         workspace.getBlockById('call-1').select();
     });
-    const destination = page.getByRole('button', {name: /Destination: Secondary/}).first();
+    await activateScript(page, 'start');
+    const destination = page.getByRole('button', {name: /Secondary.*go/}).first();
     for (const key of ['Delete', 'Backspace', 'Control+z']) {
         await destination.press(key);
         assert.equal(await page.evaluate(() => Boolean((globalThis as any).fixture.workspace.getBlockById('call-1'))), true,
@@ -244,10 +239,46 @@ test('a folded recursive arrow loops outside the hat so its relation remains vis
     const loop = (await recursive.locator('.tw-script-relation-line').boundingBox())!;
     const hat = await page.evaluate(() => {
         const block = (globalThis as any).fixture.workspace.getBlockById('definition');
-        const matrix = block.getSvgRoot().getScreenCTM();
-        return {right: matrix.e + block.width * matrix.a};
+        return {right: block.getSvgRoot().querySelector(':scope > .blocklyPath').getBoundingClientRect().right};
     });
     assert.ok(loop.x + loop.width > hat.right + 30, 'the loop extends visibly beyond the hat');
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('recursive arrow endpoints touch actual block outlines when expanded, folded, zoomed and mirrored', async () => {
+    const {page, errors} = await open();
+    for (const rtl of [false, true]) {
+        await page.evaluate(value => (globalThis as any).fixture.rtl(value), rtl);
+        for (const folded of [false, true]) {
+            await page.evaluate(value => (globalThis as any).fixture.fold('definition', value), folded);
+            for (const scale of [0.75, 1.25]) {
+                await page.evaluate(value => (globalThis as any).fixture.zoom(value), scale);
+                const distances = await page.evaluate(folded => {
+                    const workspace = (globalThis as any).fixture.workspace;
+                    const line = document.querySelector('[data-source-call="recursive"] .tw-script-relation-line') as SVGPathElement;
+                    const pointAt = (shape: SVGPathElement, length: number) => {
+                        const point = shape.getPointAtLength(length);
+                        return new DOMPoint(point.x, point.y).matrixTransform(shape.getScreenCTM()!);
+                    };
+                    const distanceToOutline = (point: DOMPoint, id: string) => {
+                        const shape = workspace.getBlockById(id).getSvgRoot().querySelector(':scope > .blocklyPath') as SVGPathElement;
+                        const length = shape.getTotalLength();
+                        let distance = Infinity;
+                        for (let i = 0; i <= 2000; i++) {
+                            const candidate = pointAt(shape, length * i / 2000);
+                            distance = Math.min(distance, Math.hypot(point.x - candidate.x, point.y - candidate.y));
+                        }
+                        return distance;
+                    };
+                    return {start: distanceToOutline(pointAt(line, 0), folded ? 'definition' : 'recursive'),
+                        end: distanceToOutline(pointAt(line, line.getTotalLength()), 'definition')};
+                }, folded);
+                assert.ok(distances.start <= 1 && distances.end <= 1,
+                    `rtl=${rtl}, folded=${folded}, scale=${scale}: outline distances ${JSON.stringify(distances)}`);
+            }
+        }
+    }
     assert.deepEqual(errors, []);
     await page.close();
 });
@@ -268,7 +299,8 @@ test('the real function editor keeps arrows through its folded-body replacement 
     assert.equal(await editor.locator('[data-script-relation="function"][data-recursive]' +
         '[data-source-block="recursive"]').count(), 1);
 
-    await editor.getByRole('button', {name: /Source: Primary/}).first().click();
+    await activateScript(page, 'definition', '[data-arrow-test-procedure] .blocklyBlockCanvas');
+    await editor.getByRole('button', {name: /Primary.*jump/}).first().click();
     await page.evaluate(() => (globalThis as any).fixture.settle());
     assert.equal(await page.evaluate(() => (globalThis as any).fixture.focusedScript()), undefined);
     assert.equal(await page.evaluate(() => (globalThis as any).fixture.lastCenteredScript()), 'start');
@@ -278,7 +310,7 @@ test('the real function editor keeps arrows through its folded-body replacement 
     }), false, 'following a caller preserves the code area\'s all-script view');
     assert.deepEqual(await page.evaluate(() => (globalThis as any).fixture.procedureErrors()), []);
     await page.evaluate(() => (globalThis as any).fixture.disposeProcedure());
-    assert.equal(await editor.locator('[data-script-relation-layer], .tw-script-relation-controls').count(), 0);
+    assert.equal(await editor.locator('[data-script-relation-layer], [data-script-relation-guide]').count(), 0);
     assert.deepEqual(errors, []);
     await page.close();
 });
@@ -362,9 +394,9 @@ test('one-script hiding is distinct from folding, and disabling and disposal lea
     await page.evaluate(() => (globalThis as any).fixture.enable(true));
     assert.equal(await relation(page, 'function').count(), 3);
     await page.evaluate(() => (globalThis as any).fixture.dispose());
-    assert.equal(await page.locator('[data-script-relation-layer], .tw-script-relation-controls').count(), 0);
+    assert.equal(await page.locator('[data-script-relation-layer], [data-script-relation-guide]').count(), 0);
     await page.evaluate(() => (globalThis as any).fixture.moveStart(10, 10));
-    assert.equal(await page.locator('[data-script-relation-layer], .tw-script-relation-controls').count(), 0,
+    assert.equal(await page.locator('[data-script-relation-layer], [data-script-relation-guide]').count(), 0,
         'a later workspace change cannot revive the disposed attachment');
     assert.deepEqual(errors, []);
     await page.close();

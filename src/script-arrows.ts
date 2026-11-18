@@ -19,9 +19,38 @@ export interface ScriptRelationContext {
 
 type Point = {x: number; y: number};
 type Box = Point & {width: number; height: number};
-type Anchor = {id: string; box: Box};
+type Anchor = {id: string; box: Box; point(side: 'left' | 'right', fraction: number): Point};
 type Drawing = {relation: ScriptRelation; source?: Anchor; destination?: Anchor; count: number};
 const ns = 'http://www.w3.org/2000/svg';
+const outlines = new WeakMap<SVGGeometryElement, {data: string; points: Point[]}>();
+
+/** Intersect the actual outline, including a hat's overhang, rather than Blockly's layout padding. */
+function outlinePoint(shape: SVGGeometryElement, bounds: Box, side: 'left' | 'right', fraction: number): Point {
+    const data = shape.getAttribute('d') ?? '';
+    let outline = outlines.get(shape);
+    if (!outline || outline.data !== data) {
+        const length = shape.getTotalLength();
+        const count = Math.max(32, Math.min(1024, Math.ceil(length / 2)));
+        const points = Array.from({length: count + 1}, (_, index) => {
+            const point = shape.getPointAtLength(length * index / count);
+            return {x: point.x, y: point.y};
+        });
+        outline = {data, points};
+        outlines.set(shape, outline);
+    }
+    const y = bounds.y + bounds.height * fraction;
+    let edge: number | undefined;
+    for (let index = 1; index < outline.points.length; index++) {
+        const before = outline.points[index - 1];
+        const after = outline.points[index];
+        if ((before.y <= y && after.y >= y) || (before.y >= y && after.y <= y)) {
+            const x = before.y === after.y ? (side === 'left' ? Math.min(before.x, after.x) : Math.max(before.x, after.x)) :
+                before.x + (after.x - before.x) * (y - before.y) / (after.y - before.y);
+            edge = edge === undefined ? x : side === 'left' ? Math.min(edge, x) : Math.max(edge, x);
+        }
+    }
+    return {x: edge ?? bounds.x + (side === 'right' ? bounds.width : 0), y};
+}
 
 // The shared workspace owns navigation even when an arrow is in a read-only preview.
 const navigators = new WeakMap<object, (endpoint: ScriptEndpoint) => void>();
@@ -57,25 +86,16 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     layer.setAttribute('aria-hidden', 'true');
     layer.setAttribute('pointer-events', 'none');
     canvas.prepend(layer);
-    const controls = document.createElement('aside');
-    controls.className = 'tw-script-relation-controls';
-    controls.dataset.codeViewControl = '';
-    const label = document.createElement('label');
-    const toggle = document.createElement('input');
-    toggle.type = 'checkbox';
-    toggle.checked = true;
-    const title = document.createElement('span');
-    label.append(toggle, title);
-    const legend = document.createElement('div');
-    legend.className = 'tw-script-relation-legend';
     const destinations = document.createElement('div');
-    destinations.className = 'tw-script-relation-destinations';
-    controls.append(label, legend, destinations);
+    destinations.className = 'tw-script-relation-guide tw-script-relation-destinations';
+    destinations.dataset.scriptRelationGuide = '';
+    destinations.dataset.codeViewControl = '';
+    destinations.hidden = true;
     // Blockly listens on the document; operating these controls must not delete or undo a block.
-    controls.addEventListener('keydown', event => {
+    destinations.addEventListener('keydown', event => {
         if (event.key !== 'Tab') event.stopPropagation();
     });
-    injection.append(controls);
+    injection.append(destinations);
     let projection: SVGSVGElement | null = null;
     let projectedLayer: SVGGElement | undefined;
     let frame: number | undefined;
@@ -83,6 +103,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     let dirty = true;
     let graph: readonly ScriptRelation[] = [];
     let selected: string | undefined;
+    let enabled = true;
     const markedScripts = new Map<SVGElement, 'source' | 'related'>();
     const text = () => /^ja(?:-|$)/i.test(getLocale?.() ?? document.documentElement.lang) ? {
         title: '呼び出しの矢印', function: '関数呼び出し', message: 'メッセージ送信', wait: '送って待つ',
@@ -148,18 +169,22 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             root = blockRoot(id, roots);
         }
         if (!root) return;
-        const matrix = (root as SVGGraphicsElement).getScreenCTM();
+        const path = root.querySelector<SVGGeometryElement>(':scope > .blocklyPath');
+        const matrix = (path ?? root as SVGGraphicsElement).getScreenCTM();
         if (!matrix) return;
         const block = workspace.getBlockById?.(id);
-        const path = root.querySelector<SVGGraphicsElement>(':scope > .blocklyPath');
-        const fallback = path?.getBBox();
-        const width = block?.width ?? fallback?.width ?? 0;
-        const height = block?.height ?? fallback?.height ?? 0;
-        if (!width || !height) return;
-        const first = transform(inverse, transform(matrix, {x: workspace.RTL ? -width : 0, y: 0}));
-        const last = transform(inverse, transform(matrix, {x: workspace.RTL ? 0 : width, y: height}));
+        const bounds = path?.getBBox() ?? {x: workspace.RTL ? -(block?.width ?? 0) : 0,
+            y: 0, width: block?.width ?? 0, height: block?.height ?? 0};
+        if (!bounds.width || !bounds.height) return;
+        const convert = (point: Point) => transform(inverse, transform(matrix, point));
+        const first = convert(bounds);
+        const last = convert({x: bounds.x + bounds.width, y: bounds.y + bounds.height});
         return {id, box: {x: Math.min(first.x, last.x), y: Math.min(first.y, last.y),
-            width: Math.abs(last.x - first.x), height: Math.abs(last.y - first.y)}};
+            width: Math.abs(last.x - first.x), height: Math.abs(last.y - first.y)}, point(side, fraction) {
+            const localSide = first.x <= last.x ? side : side === 'left' ? 'right' : 'left';
+            return convert(path ? outlinePoint(path, bounds, localSide, fraction) :
+                {x: bounds.x + (localSide === 'right' ? bounds.width : 0), y: bounds.y + bounds.height * fraction});
+        }};
     }
 
     function render() {
@@ -170,25 +195,16 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         const toolboxBounds = toolbox?.getBoundingClientRect();
         const horizontal = toolbox?.hasAttribute('data-horizontal-block-palette');
         // The horizontal palette sits above the blocks, including in the Editor's default layout.
-        controls.style.top = `${horizontal ? Math.max(10, toolboxBounds.bottom - injection.getBoundingClientRect().top + 10) : 10}px`;
-        title.textContent = strings.title;
-        controls.setAttribute('aria-label', strings.title);
-        legend.replaceChildren();
-        for (const kind of ['function', 'message'] as const) {
-            const item = document.createElement('span');
-            item.dataset.scriptRelation = kind;
-            item.textContent = strings[kind];
-            legend.append(item);
-        }
-        legend.hidden = !toggle.checked;
+        destinations.style.top = `${horizontal ? Math.max(10, toolboxBounds.bottom - injection.getBoundingClientRect().top + 10) : 10}px`;
         destinations.replaceChildren();
+        destinations.hidden = true;
         const drawingRoot = projection ?? canvas;
         const drawingLayer = projection ? projectedLayer : layer;
         if (!drawingLayer) return;
         drawingLayer.replaceChildren();
         drawingLayer.removeAttribute('data-script-dragging');
         layer.style.display = projection ? 'none' : '';
-        if (!toggle.checked) { markScripts(new Map()); return; }
+        if (!enabled) { markScripts(new Map()); return; }
         const target = getTarget();
         if (!target) { markScripts(new Map()); return; }
         const matrix = (drawingRoot as SVGGraphicsElement).getScreenCTM();
@@ -205,6 +221,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         }
         const roots = new Map<string, SVGElement>();
         for (const root of drawingRoot.querySelectorAll<SVGElement>('[data-id]')) roots.set(root.dataset.id, root);
+        const nativeSelection = [...roots.values()].find(root => root.classList.contains('blocklySelected'))?.dataset.id;
+        const emphasized = selected ?? scriptOf(nativeSelection, target);
         const dragging = !projection && injection.querySelector<SVGElement>('[data-id].blocklyDragging');
         const draggedIds = new Set<string>();
         if (dragging) {
@@ -253,9 +271,9 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         }
         for (const {relation, source, destination, count} of drawings.values()) {
             const highlighted = dragging ? incident(relation) :
-                selected && (selected === relation.source.scriptId || selected === relation.destination?.scriptId);
+                emphasized && (emphasized === relation.source.scriptId || emphasized === relation.destination?.scriptId);
             let external: HTMLButtonElement | undefined;
-            if (!source || !destination) {
+            if ((!source || !destination) && highlighted) {
                 external = document.createElement('button');
                 external.type = 'button';
                 external.dataset.scriptRelation = relation.kind;
@@ -263,9 +281,10 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 const name = endpoint && (getTargetName?.(endpoint.targetId) ??
                     vm?.runtime?.targets?.find(item => item.id === endpoint.targetId)?.getName?.());
                 const reason = relation.unresolved && strings[relation.unresolved];
-                external.textContent = `${source ? strings.outgoing : strings.incoming}: ${name ? `${name} · ` : ''}` +
+                external.textContent = `${name ? `${name} · ` : ''}` +
                     `${relation.label}${reason ? ` · ${reason}` : ''}${relation.kind === 'message' && relation.wait ? ' ⏳' : ''}${count > 1 ? ` ×${count}` : ''}`;
                 external.disabled = !endpoint;
+                external.setAttribute('aria-label', `${strings[relation.kind]}: ${external.textContent}`);
                 external.toggleAttribute('data-highlighted', Boolean(highlighted));
                 if (endpoint) external.addEventListener('click', () => go(endpoint));
                 destinations.append(external);
@@ -277,9 +296,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             const screenY = transform(matrix, {x: local.box.x, y: local.box.y + local.box.height / 2}).y;
             const edge = transform(inverse, {x: edgeX, y: Math.max(area.top + 12, Math.min(area.bottom - 12, screenY))});
             const forward = !source || !destination || destination.box.x >= source.box.x + source.box.width / 2;
-            let start = source ? {x: source.box.x + (forward ? source.box.width : 0), y: source.box.y + source.box.height / 2} : edge;
-            let end = destination ? {x: destination.box.x + (forward ? 0 : destination.box.width),
-                y: destination.box.y + Math.min(destination.box.height / 2, 24)} : edge;
+            let start = source ? source.point(forward ? 'right' : 'left', 0.5) : edge;
+            let end = destination ? destination.point(forward ? 'left' : 'right', Math.min(0.5, 24 / destination.box.height)) : edge;
             let direction = forward ? 1 : -1;
             const bend = Math.max(36, Math.abs(end.x - start.x) / 2);
             let path = `M ${start.x} ${start.y} C ${start.x + bend * direction} ${start.y}, ${end.x - bend * direction} ${end.y}, ${end.x} ${end.y}`;
@@ -287,8 +305,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 relation.source.targetId === relation.destination.targetId;
             let badgePoint = {x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 6};
             if (recursive) {
-                start = {x: source.box.x + source.box.width, y: source.box.y + source.box.height * 0.75};
-                end = {x: destination.box.x + destination.box.width, y: destination.box.y + destination.box.height * 0.25};
+                start = source.point('right', 0.75);
+                end = destination.point('right', 0.25);
                 const outside = Math.max(start.x, end.x) + 72;
                 path = `M ${start.x} ${start.y} C ${outside} ${start.y + 32}, ${outside} ${end.y - 32}, ${end.x} ${end.y}`;
                 direction = -1;
@@ -322,18 +340,23 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             }
             drawingLayer.append(group);
         }
+        destinations.hidden = !destinations.childElementCount;
     }
 
     function update() {
         if (!disposed && frame === undefined) frame = view.requestAnimationFrame(render);
     }
     function changed() { dirty = true; update(); }
-    function selectedScript(event: Event) {
-        const node = (event.target as Element).closest?.('[data-id]') as SVGElement | null;
-        let id = node?.dataset.id;
-        const blocks = getTarget()?.blocks._blocks;
+    function scriptOf(id: string | undefined, target = getTarget()) {
+        const blocks = target?.blocks._blocks;
         const visited = new Set<string>();
         while (id && blocks?.[id]?.parent && !visited.has(id)) { visited.add(id); id = blocks[id].parent; }
+        return id;
+    }
+    function selectedScript(event: Event) {
+        if ((event.target as Element).closest?.('[data-script-relation-guide]')) return;
+        const node = (event.target as Element).closest?.('[data-id]') as SVGElement | null;
+        const id = scriptOf(node?.dataset.id);
         if (id !== selected) { selected = id; update(); }
     }
     const mutations = new view.MutationObserver(records => {
@@ -356,12 +379,11 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     vm?.on?.('targetsUpdate', changed);
     vm?.on?.('workspaceUpdate', changed);
     workspace.addChangeListener?.(changed);
-    toggle.addEventListener('change', update);
     update();
     return {
         update: changed,
-        get enabled() { return toggle.checked; },
-        setEnabled(enabled: boolean) { toggle.checked = enabled; update(); },
+        get enabled() { return enabled; },
+        setEnabled(value: boolean) { enabled = value; update(); },
         setProjection(svg: SVGSVGElement | null) {
             if (svg === projection) { update(); return; }
             projectedLayer?.remove();
@@ -385,7 +407,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             injection.removeEventListener('pointerdown', selectedScript);
             projectedLayer?.remove();
             layer.remove();
-            controls.remove();
+            destinations.remove();
         }
     };
 }

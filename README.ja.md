@@ -53,7 +53,9 @@ Editor は GUI の React 16 にこれらを描画するので、React 16.14 以�
 
 色は共通の CSS 変数 `--tw-script-function-stroke` と `--tw-script-message-stroke` に定義する。明暗テーマでは同じ種別のまま明度を変え、線種でも区別できる。既存の関数呼び出し図とミニマップも関数用の変数を使う。
 
-既定は表示する。各コード画面の「呼び出しの矢印」を外すと表示を解除できる。作品の保存形式は変えない。完全に切り戻す場合は導入前のパッケージ固定と結線へ戻す。関連: [Editor #683](https://github.com/kubohiroya/turbowarp-plus-editor/issues/683)。
+コード画面に常設の凡例や表示スイッチは置かない。選択・ホバー・ドラッグ中の関係に必要な接続先だけを短く表示する。呼び出し関係の図へ渡す `readScriptRelationGraph(targets, ScratchBlocks)` は、同じ関係データと、接続先スクリプトのハットの文言・対象名・位置を返す。図の向きと関数・メッセージの表示は、呼び出し関係パネルの左端カラム下端で操作する。
+
+既定は表示する。作品の保存形式は変えない。完全に切り戻す場合は導入前のパッケージ固定と結線へ戻す。関連: [Editor #683](https://github.com/kubohiroya/turbowarp-plus-editor/issues/683)。
 
 ## 検証
 

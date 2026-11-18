@@ -153,6 +153,12 @@ const receiver = (id: string, x: number, y: number) => ({
             await settle();
         },
         async reload() {host.refreshBlockViews([vm.editingTarget]); await settle();},
+        async rtl(value: boolean) {
+            workspace.RTL = value;
+            workspace.options.RTL = value;
+            host.refreshBlockViews([vm.editingTarget]);
+            await settle();
+        },
         async moveStart(x: number, y: number) {
             workspace.getBlockById('start')?.moveBy(x, y);
             Blockly.Events.fireNow_();

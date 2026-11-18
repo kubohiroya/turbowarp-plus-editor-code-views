@@ -9,6 +9,8 @@ export interface RelationBlock {
     mutation?: Record<string, unknown>;
     topLevel?: boolean;
     shadow?: boolean;
+    x?: number;
+    y?: number;
 }
 
 export interface RelationTarget {
