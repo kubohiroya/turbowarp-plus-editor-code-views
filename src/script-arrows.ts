@@ -169,6 +169,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     let geometryChanged = true;
     let lastMatrix: DOMMatrix | undefined;
     let edgeDrawings: {key: string; drawing: Drawing; group: SVGGElement; highlighted: boolean}[] = [];
+    let viewportDrawings: {drawing: Drawing; visible: boolean}[] = [];
+    let measuredAnchors = new Map<string, Anchor | undefined>();
     const renderedGroups = new WeakMap<SVGGElement, Map<string, SVGGElement>>();
     const syncTransform = (matrix: DOMMatrix) => {
         // Workspace dragging lends the two native canvases to a separate SVG which must keep exactly two children.
@@ -233,15 +235,25 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         if (endpoint.targetId !== target.id) return;
         const top = blockRoot(endpoint.scriptId, roots);
         // A script hidden by the one-script view is not the same as its folded body.
-        if (!top || !top.getClientRects().length || top.closest('[data-tw-plus-hidden]') ||
-            view.getComputedStyle(top).display === 'none') return;
+        if (!top || top.closest('[data-tw-plus-hidden]')) return;
+        // Native viewport culling hides the whole stack, but its real endpoints still exist.
+        const culled = !projection && top.style.display === 'none';
+        if (!culled && !top.getClientRects().length) return;
         const folded = isFoldedDefinition(target.blocks._blocks[endpoint.scriptId]);
         let id = folded ? endpoint.scriptId : endpoint.blockId;
         let root = blockRoot(id, roots);
         // Native Blockly collapsing can also hide a caller inside a control block.
         const visited = new Set<string>();
-        while (root && (!root.getClientRects().length || root.closest('[data-tw-plus-hidden]') ||
-            view.getComputedStyle(root).display === 'none') && !visited.has(id)) {
+        const hidden = (node: SVGElement) => {
+            if (node.closest('[data-tw-plus-hidden]')) return true;
+            if (!culled) return !node.getClientRects().length || view.getComputedStyle(node).display === 'none';
+            // A collapsed parent below the culled stack still needs its visible proxy anchor.
+            for (let ancestor = node; ancestor && ancestor !== top; ancestor = ancestor.parentElement as unknown as SVGElement) {
+                if (view.getComputedStyle(ancestor).display === 'none') return true;
+            }
+            return false;
+        };
+        while (root && hidden(root) && !visited.has(id)) {
             visited.add(id);
             id = target.blocks._blocks[id]?.parent ?? '';
             root = blockRoot(id, roots);
@@ -354,6 +366,16 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         return group;
     }
 
+    function inViewport({source, destination}: Drawing, matrix: DOMMatrix, area: DOMRect) {
+        return [source, destination].some(anchor => {
+            if (!anchor) return false;
+            const first = transform(matrix, anchor.box);
+            const last = transform(matrix, {x: anchor.box.x + anchor.box.width, y: anchor.box.y + anchor.box.height});
+            return Math.max(first.x, last.x) > area.left && Math.min(first.x, last.x) < area.right &&
+                Math.max(first.y, last.y) > area.top && Math.min(first.y, last.y) < area.bottom;
+        });
+    }
+
     function render() {
         frame = undefined;
         if (disposed) return;
@@ -380,7 +402,9 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         const area = (projection ?? workspace.getParentSvg()).getBoundingClientRect();
         const sameScale = lastMatrix && matrix.a === lastMatrix.a && matrix.b === lastMatrix.b &&
             matrix.c === lastMatrix.c && matrix.d === lastMatrix.d;
-        if (!geometryChanged && !projection && sameScale) {
+        const reuseAnchors = !geometryChanged && !projection && sameScale;
+        if (reuseAnchors &&
+            viewportDrawings.every(item => item.visible === inViewport(item.drawing, matrix, area))) {
             const geometry = edgeDrawings.map(item => ({...item,
                 shape: arrowGeometry(item.drawing, matrix, inverse, area, item.highlighted)}));
             syncTransform(matrix);
@@ -400,6 +424,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         geometryChanged = false;
         lastMatrix = matrix;
         edgeDrawings = [];
+        viewportDrawings = [];
+        if (!reuseAnchors) measuredAnchors = new Map();
         const paint: SVGElement[] = [];
         const guides = document.createDocumentFragment();
         const previousGroups = renderedGroups.get(drawingLayer);
@@ -422,11 +448,10 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         const inDrag = (endpoint?: ScriptEndpoint) => Boolean(endpoint && endpoint.targetId === target.id && draggedIds.has(endpoint.blockId));
         const incident = (relation: ScriptRelation) => inDrag(relation.source) || inDrag(relation.destination);
         const drawings = new Map<string, Drawing>();
-        const anchors = new Map<string, Anchor | undefined>();
         const measuredAnchor = (endpoint: ScriptEndpoint) => {
             const key = `${endpoint.targetId}\0${endpoint.scriptId}\0${endpoint.blockId}`;
-            if (!anchors.has(key)) anchors.set(key, anchor(endpoint, target, roots, inverse));
-            return anchors.get(key);
+            if (!measuredAnchors.has(key)) measuredAnchors.set(key, anchor(endpoint, target, roots, inverse));
+            return measuredAnchors.get(key);
         };
         for (const relation of graph) {
             if (!visibility[relation.kind]) continue;
@@ -484,7 +509,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             const root = blockRoot(id, roots);
             if (root && root.getClientRects().length && !root.closest('[data-tw-plus-hidden]')) marked.set(root, 'related');
         }
-        // Frame the whole stack, including its body; the original block paint and runtime glow stay intact.
+        // Shade the whole stack, including its body; the original block paint and runtime glow stay intact.
         for (const [root, role] of marked) {
             const bounds = root.getBoundingClientRect();
             const first = transform(inverse, {x: bounds.left, y: bounds.top});
@@ -494,6 +519,9 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 rx: '10', class: 'tw-script-relation-script-highlight', 'data-emphasis': role}));
         }
         for (const [key, drawing] of drawings) {
+            const visible = inViewport(drawing, matrix, area);
+            viewportDrawings.push({drawing, visible});
+            if (!visible) continue;
             const {relation, source, destination, count} = drawing;
             const highlighted = dragging ? incident(relation) :
                 emphasized && (emphasized === relation.source.scriptId || emphasized === relation.destination?.scriptId);
@@ -545,6 +573,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         if (destinations.childElementCount) destinations.replaceChildren();
         destinations.hidden = true;
         edgeDrawings = [];
+        viewportDrawings = [];
+        measuredAnchors.clear();
         lastMatrix = undefined;
         renderedGroups.delete(layer);
         if (projectedLayer) renderedGroups.delete(projectedLayer);
