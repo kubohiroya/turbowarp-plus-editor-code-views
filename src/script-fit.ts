@@ -17,7 +17,7 @@ const padding = 24;
 const positive = (value: number | undefined, fallback: number) =>
     Number.isFinite(value) && value > 0 ? value : fallback;
 
-/** Fit a visible script once. Hidden or not-yet-rendered workspaces can retry after their layout settles. */
+/** Fit a script once, placing its first block at the viewport's top left with padding. */
 export function fitScriptInWorkspace(workspace: ScriptFitWorkspace, scriptId: string,
     blocks: {svgResize(workspace: ScriptFitWorkspace): void}): boolean {
     const injection = workspace.getInjectionDiv();
@@ -33,8 +33,11 @@ export function fitScriptInWorkspace(workspace: ScriptFitWorkspace, scriptId: st
     if (!metrics?.viewWidth || !metrics.viewHeight || !(bounds.width > 0) || !(bounds.height > 0)) return false;
     // SVG bounds include nested reporters and the hat's overhang, but exclude folded, hidden bodies.
     const origin = block.getRelativeToSurfaceXY();
-    const left = origin.x + bounds.x;
-    const top = origin.y + bounds.y;
+    // A wider block farther down the script must not shift the first block's anchor.
+    const path = root.querySelector<SVGGraphicsElement>(':scope > .blocklyPath');
+    const first = path?.getBBox() ?? bounds;
+    const left = origin.x + (path && workspace.RTL ? -first.x - first.width : first.x);
+    const top = origin.y + first.y;
     const zoom = workspace.options?.zoomOptions;
     const workspaceMin = positive(zoom?.minScale, 0.01);
     const workspaceMax = Math.max(workspaceMin, positive(zoom?.maxScale, Infinity));
@@ -46,12 +49,7 @@ export function fitScriptInWorkspace(workspace: ScriptFitWorkspace, scriptId: st
     workspace.setScale(scale);
     const scaled = workspace.getMetrics();
     if (!scaled) return false;
-    const width = bounds.width * workspace.scale;
-    const height = bounds.height * workspace.scale;
-    const x = width > scaled.viewWidth - padding * 2 && workspace.RTL ?
-        scaled.viewWidth - padding - width : Math.max(padding, (scaled.viewWidth - width) / 2);
-    const y = workspace.scale <= minScale ? padding : Math.max(padding, (scaled.viewHeight - height) / 2);
-    workspace.scrollbar.set(left * workspace.scale - scaled.contentLeft - x,
-        top * workspace.scale - scaled.contentTop - y);
+    workspace.scrollbar.set(left * workspace.scale - scaled.contentLeft - padding,
+        top * workspace.scale - scaled.contentTop - padding);
     return true;
 }

@@ -43,6 +43,11 @@ const target = (name: string, isStage: boolean, blocks: object) => ({name, isSta
         argumentids: '[]', argumentnames: '[]', argumentdefaults: '[]', warp: 'false'};
     const blocks = {...stack('small', 1, 700, 500), ...stack('medium', 18, -900, -600),
         ...stack('tall', 90, 1400, 2100), ...stack('unrelated', 120, 8000, 9000),
+        offset: block('offset', 'event_whenflagclicked', {topLevel: true, x: 2000, y: -2000, next: 'offset-say'}),
+        'offset-say': block('offset-say', 'looks_say', {parent: 'offset',
+            inputs: {MESSAGE: {name: 'MESSAGE', block: 'offset-text', shadow: 'offset-text'}}}),
+        'offset-text': block('offset-text', 'text', {parent: 'offset-say', shadow: true,
+            fields: {TEXT: {name: 'TEXT', value: 'A wide block below the hat. '.repeat(5)}}}),
         wide: block('wide', 'procedures_definition', {topLevel: true, x: -1200, y: -1800,
             inputs: {custom_block: {name: 'custom_block', block: 'wide-prototype', shadow: 'wide-prototype'}}}),
         'wide-prototype': block('wide-prototype', 'procedures_prototype', {parent: 'wide', shadow: true, mutation})};
@@ -75,9 +80,11 @@ const target = (name: string, isStage: boolean, blocks: object) => ({name, isSta
         const metrics = workspace.getMetrics();
         const svg = workspace.getParentSvg().getBoundingClientRect();
         const rect = root?.getBoundingClientRect();
+        const first = root?.querySelector(':scope > .blocklyPath')?.getBoundingClientRect();
         return {scale: workspace.scale, scrollX: workspace.scrollX, scrollY: workspace.scrollY,
             box: rect && {left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
                 width: rect.width, height: rect.height},
+            first: first && {left: first.left, top: first.top, right: first.right, bottom: first.bottom},
             view: {left: svg.left + metrics.absoluteLeft, top: svg.top + metrics.absoluteTop,
                 width: metrics.viewWidth, height: metrics.viewHeight,
                 right: svg.left + metrics.absoluteLeft + metrics.viewWidth,
