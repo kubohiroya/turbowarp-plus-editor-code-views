@@ -590,6 +590,24 @@
     pointer-events: none;
 }
 
+.tw-script-relation-wait {
+    pointer-events: visiblePainted;
+}
+
+.tw-script-relation-wait rect {
+    fill: var(--ui-primary, Canvas);
+    stroke: var(--tw-script-relation-stroke);
+    stroke-width: 1;
+}
+
+.tw-script-relation-wait .tw-script-relation-wait-glyph {
+    fill: none;
+    stroke: var(--tw-script-relation-stroke);
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .tw-script-relation-guide {
     position: absolute;
     z-index: 5;

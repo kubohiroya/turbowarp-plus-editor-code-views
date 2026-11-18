@@ -22,6 +22,21 @@ type Box = Point & {width: number; height: number};
 type Anchor = {id: string; box: Box; point(side: 'left' | 'right', fraction: number): Point};
 type Drawing = {relation: ScriptRelation; source?: Anchor; destination?: Anchor; count: number};
 const ns = 'http://www.w3.org/2000/svg';
+// Keep the same sixteen-unit hourglass as the call graph's relation badge.
+const relationWaitGlyph = 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12';
+
+/** Keep the badge beside the receiving end of the cubic curve, leaving its stroke visible. */
+function waitBadgePoint(path: string, offset: number): Point {
+    const [sx, sy, ax, ay, bx, by, tx, ty] = path.match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
+    const endX = tx - bx;
+    const endY = ty - by;
+    const dx = endX || endY ? endX : tx - sx;
+    const dy = endX || endY ? endY : ty - sy;
+    const length = Math.hypot(dx, dy) || 1;
+    const side = -dy < 0 || dy === 0 && dx > 0 ? -1 : 1;
+    return {x: tx - dx / length * offset * .75 - dy / length * offset * side,
+        y: ty - dy / length * offset * .75 + dx / length * offset * side};
+}
 const outlines = new WeakMap<SVGGeometryElement, {data: string; points: Point[]}>();
 
 /** Intersect the actual outline, including a hat's overhang, rather than Blockly's layout padding. */
@@ -332,10 +347,22 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 class: 'tw-script-relation-head',
                 d: `M ${end.x - 9 * direction} ${end.y - 5} L ${end.x} ${end.y} L ${end.x - 9 * direction} ${end.y + 5}`
             }));
-            if (count > 1 || waiting) {
+            if (waiting) {
+                const scale = Math.hypot(matrix.a, matrix.b) || 1;
+                const point = waitBadgePoint(path, 24 / scale);
+                badgePoint = {x: point.x + 16 / scale, y: point.y + 4 / scale};
+                const badge = element('g', {class: 'tw-script-relation-wait', 'aria-label': strings.wait,
+                    transform: `translate(${point.x} ${point.y}) scale(${1 / scale})`});
+                const title = element('title');
+                title.textContent = strings.wait;
+                badge.append(title, element('rect', {x: '-10', y: '-10', width: '20', height: '20', rx: '4'}),
+                    element('path', {class: 'tw-script-relation-wait-glyph', d: relationWaitGlyph, transform: 'translate(-8 -8)'}));
+                group.append(badge);
+            }
+            if (count > 1) {
                 const badge = element('text', {x: String(badgePoint.x), y: String(badgePoint.y),
-                    class: `tw-script-relation-badge${waiting ? ' tw-script-relation-wait' : ''}`, 'text-anchor': 'middle'});
-                badge.textContent = `${waiting ? '⏳' : ''}${count > 1 ? ` ×${count}` : ''}`;
+                    class: 'tw-script-relation-badge', 'text-anchor': waiting ? 'start' : 'middle'});
+                badge.textContent = `×${count}`;
                 group.append(badge);
             }
             drawingLayer.append(group);

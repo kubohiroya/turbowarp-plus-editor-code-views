@@ -99,6 +99,45 @@ test('message destinations in other sprites are accessible and send-and-wait kee
     await page.close();
 });
 
+test('send-and-wait uses a fixed-size vector badge beside the line with a reachable explanatory tooltip', async () => {
+    const {page, errors} = await open();
+    const badge = page.locator('[data-source-call="wait"][data-destination-block="receive"] .tw-script-relation-wait');
+    await badge.waitFor();
+    const inspect = () => badge.evaluate(group => {
+        const rect = group.querySelector('rect').getBoundingClientRect();
+        const path = group.parentElement.querySelector<SVGPathElement>('.tw-script-relation-line');
+        const matrix = path.getScreenCTM();
+        const point = (distance: number) => {
+            const local = path.getPointAtLength(distance);
+            return {x: matrix.a * local.x + matrix.c * local.y + matrix.e,
+                y: matrix.b * local.x + matrix.d * local.y + matrix.f};
+        };
+        const samples = Array.from({length: 101}, (_, index) => point(path.getTotalLength() * index / 100));
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        return {width: rect.width, height: rect.height, title: group.querySelector('title').textContent,
+            glyph: group.querySelector('.tw-script-relation-wait-glyph')?.getAttribute('d'),
+            text: group.querySelector('text')?.textContent,
+            overlaps: samples.some(point => point.x >= rect.left - 1 && point.x <= rect.right + 1 &&
+                point.y >= rect.top - 1 && point.y <= rect.bottom + 1),
+            hit: document.elementFromPoint(x, y)?.closest('.tw-script-relation-wait') === group};
+    });
+    let result = await inspect();
+    assert.ok(Math.abs(result.width - 20) < .1 && Math.abs(result.height - 20) < .1);
+    assert.equal(result.title, 'Send and wait');
+    assert.equal(result.glyph, 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12');
+    assert.equal(result.text, undefined, 'the mark does not depend on emoji fonts');
+    assert.equal(result.overlaps, false, 'the line never runs through the badge');
+    assert.equal(result.hit, true, 'pointer hit testing can reach the SVG title');
+    await badge.hover();
+    await page.evaluate(() => (globalThis as any).fixture.zoom(.6));
+    result = await inspect();
+    assert.ok(Math.abs(result.width - 20) < .1 && Math.abs(result.height - 20) < .1, 'zoom keeps the glyph readable');
+    assert.equal(result.overlaps, false);
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
 test('a VM-free child context resolves contextual destination names from its catalog', async () => {
     const {page, errors} = await open();
     await page.evaluate(() => (globalThis as any).fixture.attachCatalogContext());
