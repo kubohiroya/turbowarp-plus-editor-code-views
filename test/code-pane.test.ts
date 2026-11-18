@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {test} from 'node:test';
-import {createCodePaneAdapter, readSavedCodePane} from '../dist/code-pane.js';
+import {createCodePaneAdapter, readSavedCodePane, readScriptRelationGraph} from '../dist/code-pane.js';
 import {getCodeSession} from '../dist/workspace.js';
 
 function setup() {
@@ -15,10 +15,51 @@ function setup() {
         },
         focusScript() {}
     } as never;
-    return {adapter: createCodePaneAdapter(vm, 'en'), reads: () => reads};
+    return {adapter: createCodePaneAdapter(vm, 'en'), reads: () => reads, vm};
 }
 
 const pane = (section = 0) => ({id: 'view-1', targetId: 'hero', section});
+
+test('the calls panel receives named script endpoints without mixing the same block id in different sprites', () => {
+    const blocks = {
+        same: {id: 'same', opcode: 'event_whenflagclicked', x: 12, y: 34},
+        call: {id: 'call', opcode: 'procedures_call', parent: 'same', mutation: {proccode: 'jump'}},
+        definition: {id: 'definition', opcode: 'procedures_definition', topLevel: true,
+            inputs: {custom_block: {block: 'prototype', shadow: 'prototype'}}},
+        prototype: {id: 'prototype', opcode: 'procedures_prototype', parent: 'definition', shadow: true,
+            mutation: {proccode: 'jump'}},
+        send: {id: 'send', opcode: 'event_broadcast', parent: 'definition',
+            inputs: {BROADCAST_INPUT: {block: 'menu', shadow: 'menu'}}},
+        menu: {id: 'menu', opcode: 'event_broadcast_menu', parent: 'send', shadow: true,
+            fields: {BROADCAST_OPTION: {value: 'go'}}},
+        unused: {id: 'unused', opcode: 'looks_show'}
+    };
+    const sender = {id: 'sender', isOriginal: true, getName: () => 'Sender', blocks: {_blocks: blocks}};
+    const receiver = {id: 'receiver', isOriginal: true, getName: () => 'Receiver', blocks: {_blocks: {
+        same: {id: 'same', opcode: 'event_whenbroadcastreceived', topLevel: true, fields: {BROADCAST_OPTION: {value: 'go'}}}
+    }}};
+    const before = JSON.stringify([sender.blocks, receiver.blocks]);
+    const data = readScriptRelationGraph([sender, receiver, {...receiver, id: 'clone', isOriginal: false}], undefined);
+    assert.deepEqual(data.scriptRelations.map(relation => relation.kind), ['function', 'message']);
+    assert.deepEqual(data.scripts.map(script => [script.targetId, script.scriptId, script.label]), [
+        ['sender', 'same', 'event_whenflagclicked'], ['sender', 'definition', 'jump'], ['receiver', 'same', 'go']
+    ]);
+    assert.equal(data.scripts[0].targetName, 'Sender');
+    assert.equal(data.scripts[0].x, 12);
+    assert.equal(data.scripts[0].y, 34);
+    assert.equal(JSON.stringify([sender.blocks, receiver.blocks]), before);
+});
+
+test('following an arrow preserves normal mode and updates an existing one-script pane across restores', () => {
+    const {adapter, vm} = setup();
+    adapter.restore(pane());
+    getCodeSession(vm).changed({targetId: 'hero', blockId: 'call', scriptId: 'destination'});
+    assert.equal(adapter.focusedScript('view-1'), undefined, 'normal mode still shows all scripts');
+    adapter.focusPane('view-1', 'original');
+    getCodeSession(vm).changed({targetId: 'hero', blockId: 'call', scriptId: 'destination'});
+    adapter.restore(pane());
+    assert.equal(adapter.focusedScript('view-1'), 'destination', 'returning to the pane keeps the navigated script');
+});
 
 test('a tab keeps the zoom, scroll position and script view of its code area', () => {
     const {adapter} = setup();

@@ -1,6 +1,7 @@
 import {getCodeSession} from './workspace.ts';
 import type {AttachPreviewMinimap, AttachWorkspaceNavigation} from './workspace.ts';
 import {getDockedScriptLayout, type ScriptView} from './script-layout-view.ts';
+import {readScriptRelations, type RelationTarget} from './script-relations.ts';
 
 type Pane = {id: string; targetId: string; section: number};
 type Bridge = NonNullable<ReturnType<typeof getCodeSession>['bridge']>;
@@ -41,7 +42,9 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
     let pending: {frame: number; pane: Pane; presentation: Presentation} | undefined;
     // The GUI can attach the code area again, with a new bridge; the view it is in still shows its script.
     let attached = session.bridge;
-    session.subscribe(() => {
+    session.subscribe(navigation => {
+        const focus = current === undefined ? undefined : focused.get(current);
+        if (navigation && focus) focus.scriptId = navigation.scriptId;
         if (session.bridge === attached) return;
         attached = session.bridge;
         if (current !== undefined) applyFocus(current);
@@ -349,6 +352,34 @@ export function readHatScripts(target, ScratchBlocks, skip: ReadonlySet<string> 
         ScratchBlocks.Events.enable();
         workspace.dispose();
     }
+}
+
+/** Supply the calls panel with the same relations and native hat labels as the code workspace. */
+export function readScriptRelationGraph(targets: readonly RelationTarget[], ScratchBlocks) {
+    const scriptRelations = readScriptRelations(targets);
+    const used = new Map<string, Set<string>>();
+    for (const relation of scriptRelations) {
+        for (const endpoint of [relation.source, relation.destination]) {
+            if (!endpoint) continue;
+            if (!used.has(endpoint.targetId)) used.set(endpoint.targetId, new Set());
+            used.get(endpoint.targetId).add(endpoint.scriptId);
+        }
+    }
+    const scripts: {targetId: string; scriptId: string; label: string; targetName?: string; isStage?: boolean; x?: number; y?: number}[] = [];
+    for (const target of targets) {
+        if (target.isOriginal === false || !used.has(target.id)) continue;
+        const hats = new Map(readHatScripts(target, ScratchBlocks).map(hat => [hat.id, hat]));
+        for (const scriptId of used.get(target.id)) {
+            const block = target.blocks._blocks[scriptId];
+            if (!block) continue;
+            const prototype = target.blocks._blocks[block.inputs?.custom_block?.block ?? ''];
+            const label = hats.get(scriptId)?.label ?? String(prototype?.mutation?.proccode ??
+                block.fields?.BROADCAST_OPTION?.value ?? block.opcode);
+            scripts.push({targetId: target.id, scriptId, label, targetName: target.getName?.(),
+                isStage: Boolean(target.isStage), x: block.x ?? 0, y: block.y ?? 0});
+        }
+    }
+    return {scriptRelations, scripts};
 }
 
 /**

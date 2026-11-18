@@ -47,12 +47,12 @@ function fixture(receiveBackpackDrop) {
     const other = makeTarget('other');
     const vm = Object.assign(new EventEmitter(), {
         editingTarget: target,
-        runtime: {
+        runtime: Object.assign(new EventEmitter(), {
             targets: [target, other],
             getTargetForStage: () => stage,
             getTargetById: id => [target, other].find(sprite => sprite.id === id),
             getEditingTarget: () => vm.editingTarget
-        },
+        }),
         setEditingTarget(id) {
             this.editingTarget = this.runtime.getTargetById(id);
             this.emit('targetsUpdate');
@@ -785,4 +785,177 @@ test('blocks drawn while hidden are laid out again, children before parents', ()
     label.size_.width = 32;
     assert.equal(remeasureHiddenFields(workspace as never), false, 'nothing to do once measured');
     assert.deepEqual(order, []);
+});
+
+function relationsFixture() {
+    const context = fixture();
+    const {target, other} = context;
+    Object.assign(target.blocks._blocks, {
+        flag: {id: 'flag', opcode: 'event_whenflagclicked'},
+        call: {id: 'call', opcode: 'procedures_call', parent: 'flag', inputs: {},
+            mutation: {proccode: 'alpha', argumentids: '[]'}},
+        alpha: {id: 'alpha', opcode: 'procedures_definition', inputs: {custom_block: {block: 'alpha-prototype'}}},
+        'alpha-prototype': {id: 'alpha-prototype', opcode: 'procedures_prototype', parent: 'alpha',
+            mutation: {proccode: 'alpha'}, shadow: true},
+        beta: {id: 'beta', opcode: 'procedures_definition', inputs: {custom_block: {block: 'beta-prototype'}}},
+        'beta-prototype': {id: 'beta-prototype', opcode: 'procedures_prototype', parent: 'beta',
+            mutation: {proccode: 'beta'}, shadow: true},
+        send: {id: 'send', opcode: 'event_broadcast', parent: 'flag',
+            inputs: {BROADCAST_INPUT: {block: 'message', shadow: 'message'}}},
+        message: {id: 'message', opcode: 'event_broadcast_menu', parent: 'send', shadow: true,
+            fields: {BROADCAST_OPTION: {value: 'ready'}}}
+    });
+    Object.assign(other.blocks._blocks, {
+        receive: {id: 'receive', opcode: 'event_whenbroadcastreceived', fields: {BROADCAST_OPTION: {value: 'ready'}}},
+        'unrelated-call': {id: 'unrelated-call', opcode: 'procedures_call', mutation: {proccode: 'private'}},
+        private: {id: 'private', opcode: 'procedures_definition', inputs: {custom_block: {block: 'private-prototype'}}},
+        'private-prototype': {id: 'private-prototype', opcode: 'procedures_prototype', parent: 'private',
+            mutation: {proccode: 'private'}, shadow: true}
+    });
+    target.blocks._scripts.push('flag', 'alpha', 'beta');
+    other.blocks._scripts.push('receive', 'unrelated-call', 'private');
+    return context;
+}
+
+test('popout snapshots include serialized blocks and the complete static relation graph', () => {
+    const {session, connect, target} = relationsFixture();
+    const child = connect(target);
+    const snapshot = child.messages.at(-1);
+    assert.equal(snapshot.type, 'snapshot');
+    assert.deepEqual(snapshot.blocks, target.blocks._blocks);
+    assert.deepEqual(snapshot.scriptRelations.map(relation => [relation.kind, relation.source.blockId,
+        relation.source.scriptId, relation.destination?.targetId, relation.destination?.blockId]), [
+        ['function', 'call', 'flag', target.id, 'alpha'],
+        ['message', 'send', 'flag', 'other', 'receive'],
+        ['function', 'unrelated-call', 'unrelated-call', 'other', 'private']
+    ]);
+    session.dispose();
+});
+
+test('accepted popout edits project the latest blocks and relations to history, mirrors, and undo', () => {
+    const {session, connect, target} = relationsFixture();
+    target.blocks.blocklyListen = event => {
+        target.blocks._blocks[event.blockId].mutation.proccode = event.newValue;
+    };
+    const child = connect(target);
+    const mirror = connect(target);
+    child.focus();
+    const {lease} = child.messages.at(-1);
+    child.send({type: 'edits', targetId: target.id, lease, events: [
+        {type: 'change', element: 'mutation', blockId: 'call', newValue: 'beta'}
+    ]});
+    for (const [view, type] of [[child, 'history'], [mirror, 'update']]) {
+        const update = view.messages.at(-1);
+        assert.equal(update.type, type);
+        assert.equal(update.blocks.call.mutation.proccode, 'beta');
+        assert.equal(update.scriptRelations.find(relation => relation.source.blockId === 'call').destination.blockId, 'beta');
+        assert.equal(update.canUndo, true);
+    }
+    assert.equal(Object.hasOwn(child.messages.at(-1), 'xml'), false, 'source typing is not reloaded');
+    child.send({type: 'step', targetId: target.id, lease, redo: false});
+    const undone = child.messages.at(-1);
+    assert.equal(undone.type, 'step-result');
+    assert.equal(undone.blocks.call.mutation.proccode, 'alpha');
+    assert.equal(undone.scriptRelations.find(relation => relation.source.blockId === 'call').destination.blockId, 'alpha');
+    session.dispose();
+});
+
+test('relation navigation accepts current endpoints and rejects malformed, unrelated, stale, and background requests', () => {
+    const {session, connect, target, other, vm} = relationsFixture();
+    const child = connect(target);
+    child.focus();
+    const navigate = endpoint => child.send({type: 'relation-navigate', ...endpoint});
+    for (const endpoint of [
+        {targetId: target.id, blockId: 'call', scriptId: 'flag'},
+        {targetId: target.id, blockId: 'alpha', scriptId: 'alpha'}
+    ]) {
+        navigate(endpoint);
+        assert.deepEqual(child.messages.at(-1), {type: 'relation-focus', blockId: endpoint.blockId, scriptId: endpoint.scriptId});
+    }
+    for (const endpoint of [
+        {}, {targetId: null, blockId: 'call', scriptId: 'flag'},
+        {targetId: {}, blockId: 'call', scriptId: 'flag'},
+        {targetId: target.id, blockId: 'call', scriptId: 'wrong-root'},
+        {targetId: target.id, blockId: 'absent', scriptId: 'flag'},
+        {targetId: other.id, blockId: 'private', scriptId: 'private'}
+    ]) {
+        const count = child.messages.length;
+        navigate(endpoint);
+        assert.equal(child.messages.length, count, `reject ${JSON.stringify(endpoint)}`);
+    }
+    target.blocks._blocks.call.mutation.proccode = 'beta';
+    let count = child.messages.length;
+    navigate({targetId: target.id, blockId: 'alpha', scriptId: 'alpha'});
+    assert.equal(child.messages.length, count, 'an unreferenced old destination is stale');
+    delete other.blocks._blocks.receive;
+    navigate({targetId: other.id, blockId: 'receive', scriptId: 'receive'});
+    assert.equal(child.messages.length, count, 'a removed receiver is stale');
+
+    const foreground = connect(other);
+    foreground.focus();
+    count = child.messages.length;
+    navigate({targetId: target.id, blockId: 'call', scriptId: 'flag'});
+    assert.equal(child.messages.length, count, 'a draining or background window cannot navigate');
+    assert.equal(vm.editingTarget, target);
+    session.dispose();
+});
+
+test('cross-target relation navigation drains old edits before target, focus, and the new lease', () => {
+    const {session, connect, target, other, vm} = relationsFixture();
+    const child = connect(target);
+    child.focus();
+    const {lease} = child.messages.at(-1);
+    child.send({type: 'relation-navigate', targetId: other.id, blockId: 'receive', scriptId: 'receive'});
+    assert.equal(child.messages.at(-1).type, 'revoke');
+    assert.equal(vm.editingTarget, target, 'retarget waits for the old owner to release');
+    const count = child.messages.length;
+    child.send({type: 'relation-navigate', targetId: target.id, blockId: 'call', scriptId: 'flag'});
+    assert.equal(child.messages.length, count, 'navigation during draining cannot overwrite the pending destination');
+    child.send({type: 'edits', targetId: target.id, lease,
+        events: [{type: 'move', blockId: 'block', newCoordinate: {x: 72, y: 0}}]});
+    assert.equal(target.blocks._blocks.block.x, 72);
+    const beforeRelease = child.messages.length;
+    child.send({type: 'release', lease});
+    const released = child.messages.slice(beforeRelease);
+    assert.deepEqual(released.map(message => message.type), ['target', 'relation-focus', 'grant']);
+    assert.equal(released[0].targetId, other.id);
+    assert.deepEqual(released[1], {type: 'relation-focus', blockId: 'receive', scriptId: 'receive'});
+    assert.equal(vm.editingTarget, other);
+    assert.ok(released[2].lease > lease);
+    assert.equal(target.blocks._blocks.block.x, 72, 'unpublished old-window movement survives retargeting');
+    assert.equal(other.blocks._blocks.block.x, 0);
+
+    // Returning to the old target retains its separate shared history.
+    const otherLease = released[2].lease;
+    child.send({type: 'select-target', lease: otherLease, targetId: other.id, nextTargetId: target.id});
+    child.send({type: 'release', lease: otherLease});
+    const returned = child.messages.at(-1);
+    assert.equal(returned.type, 'grant');
+    assert.equal(returned.canUndo, true);
+    child.send({type: 'step', lease: returned.lease, targetId: target.id, redo: false});
+    assert.equal(target.blocks._blocks.block.x, 0);
+    session.dispose();
+});
+
+test('project changes refresh every popout relation graph and disposal cancels queued delivery', async () => {
+    const {session, connect, target, other, vm} = relationsFixture();
+    const child = connect(target);
+    const mirror = connect(other);
+    other.blocks._blocks.late = {id: 'late', opcode: 'event_whenbroadcastreceived',
+        fields: {BROADCAST_OPTION: {value: 'ready'}}};
+    vm.runtime.emit('PROJECT_CHANGED');
+    vm.runtime.emit('PROJECT_CHANGED');
+    await Promise.resolve();
+    for (const view of [child, mirror]) {
+        const updates = view.messages.filter(message => message.type === 'relations');
+        assert.equal(updates.length, 1, 'coalesced refresh');
+        assert.deepEqual(updates[0].scriptRelations.filter(relation => relation.source.blockId === 'send')
+            .map(relation => relation.destination.blockId), ['receive', 'late']);
+    }
+    vm.runtime.emit('PROJECT_CHANGED');
+    const counts = [child.messages.length, mirror.messages.length];
+    session.dispose();
+    await Promise.resolve();
+    assert.deepEqual([child.messages.length, mirror.messages.length], counts, 'no delivery after disposal');
+    assert.equal(vm.runtime.listenerCount('PROJECT_CHANGED'), 0);
 });
