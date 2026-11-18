@@ -33,7 +33,8 @@ test('the first block menu entry edits the containing script, ahead of a functio
             await expect(items(page).first()).toHaveText(edit);
             await expect(items(page).nth(1)).toHaveText(calls);
             assert.deepEqual(await items(page).evaluateAll(nodes => nodes.slice(0, 3)
-                .map(node => getComputedStyle(node).borderTopWidth)), ['0px', '0px', '1px']);
+                .map(node => node.classList.contains('tw-script-editor-menu-divider'))), [false, false, true]);
+            await expect(items(page).nth(2)).toHaveCSS('border-top-width', '1px');
             if (block === 'call-1') await expect(items(page).nth(2)).toHaveText('この関数を表示');
             await items(page).first().click();
             assert.deepEqual(await page.evaluate(() => (globalThis as any).menuFixture.opened.at(-1)),
