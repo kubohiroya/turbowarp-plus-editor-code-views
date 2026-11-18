@@ -593,7 +593,9 @@
     stroke-opacity: 0.2;
 }
 
-[data-script-relation-layer] > [data-script-relation][data-script-external] {
+/* Fade external connections without reducing the wait icon's opacity. */
+[data-script-relation-layer] > [data-script-relation][data-script-external] >
+    :is(.tw-script-relation-line, .tw-script-relation-head, .tw-script-relation-badge) {
     opacity: 0.05;
 }
 

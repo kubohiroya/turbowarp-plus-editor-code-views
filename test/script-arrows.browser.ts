@@ -256,7 +256,7 @@ test('message destinations in other sprites are accessible and send-and-wait kee
         'the same wait mark appears on local and remote receiver edges');
     assert.equal(await sending.locator('.tw-script-relation-wait').count(), 0);
     const paint = () => waiting.evaluateAll(groups => groups.map(group => ({
-        external: group.hasAttribute('data-script-external'), opacity: getComputedStyle(group).opacity,
+        external: group.hasAttribute('data-script-external'), opacity: getComputedStyle(group.querySelector('.tw-script-relation-line')).opacity,
         stroke: getComputedStyle(group.querySelector('.tw-script-relation-line')).strokeOpacity
     })));
     assert.deepEqual(await paint(), [
@@ -277,8 +277,9 @@ test('message destinations in other sprites are accessible and send-and-wait kee
     await page.close();
 });
 
-test('send-and-wait uses a fixed-size vector badge beside the line with a reachable explanatory tooltip', async () => {
+test('send-and-wait scales its vector badge with the workspace and keeps its explanatory tooltip', async () => {
     const {page, errors} = await open();
+    await page.evaluate(() => (globalThis as any).fixture.attachLayout());
     const badge = page.locator('[data-source-call="wait"][data-destination-block="receive"] .tw-script-relation-wait');
     await badge.waitFor();
     const inspect = () => badge.evaluate(group => {
@@ -308,10 +309,51 @@ test('send-and-wait uses a fixed-size vector badge beside the line with a reacha
     assert.equal(result.overlaps, false, 'the line never runs through the badge');
     assert.equal(result.hit, true, 'pointer hit testing can reach the SVG title');
     await badge.hover();
-    await page.evaluate(() => (globalThis as any).fixture.zoom(.6));
-    result = await inspect();
-    assert.ok(Math.abs(result.width - 20) < .1 && Math.abs(result.height - 20) < .1, 'zoom keeps the glyph readable');
-    assert.equal(result.overlaps, false);
+    for (const scale of [.6, .2, .02, 1.5, 1]) {
+        await page.evaluate(value => (globalThis as any).fixture.zoom(value), scale);
+        result = await inspect();
+        assert.ok(Math.abs(result.width - 20 * scale) < .01 && Math.abs(result.height - 20 * scale) < .01,
+            `the badge follows workspace scale ${scale}: ${result.width} × ${result.height}`);
+        if (scale >= .2) assert.equal(result.overlaps, false);
+    }
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('wait badges stay opaque on local and external arrows through zoom, scroll and highlighting', async () => {
+    const {page, errors} = await open();
+    await page.evaluate(() => (globalThis as any).fixture.attachLayout());
+    const badges = page.locator('[data-source-call="wait"] .tw-script-relation-wait');
+    const inspect = () => badges.evaluateAll(groups => groups.map(group => {
+        let opacity = 1;
+        for (let node: Element | null = group; node; node = node.parentElement) {
+            opacity *= Number(getComputedStyle(node).opacity);
+        }
+        const glyph = getComputedStyle(group.querySelector('.tw-script-relation-wait-glyph'));
+        const rect = group.querySelector('rect').getBoundingClientRect();
+        return {opacity, stroke: glyph.strokeOpacity, width: rect.width};
+    }));
+    const check = async (scale: number) => {
+        const states = await inspect();
+        assert.equal(states.length, 2);
+        for (const state of states) {
+            assert.equal(state.opacity, 1, 'the external line opacity must not fade the wait badge');
+            assert.equal(state.stroke, '1');
+            assert.ok(Math.abs(state.width - 20 * scale) < .01);
+        }
+    };
+    await check(1);
+    await activateScript(page, 'start');
+    await check(1);
+    for (const scale of [.2, .02, .6, 1.5, 1]) {
+        await page.evaluate(value => (globalThis as any).fixture.zoom(value), scale);
+        await check(scale);
+        await page.evaluate(() => (globalThis as any).fixture.scroll(120, 40));
+        await check(scale);
+    }
+    await page.evaluate(() => (globalThis as any).fixture.switchToSecondary());
+    assert.equal(await badges.count(), 1, 'also cover the incoming external arrow');
+    assert.equal((await inspect())[0].opacity, 1);
     assert.deepEqual(errors, []);
     await page.close();
 });
