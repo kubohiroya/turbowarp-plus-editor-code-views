@@ -14,7 +14,93 @@
     "declaration": true,
     "rootDir": "src",
     "outDir": "dist",
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    "paths": {
+      "@kubohiroya/turbowarp-plus-editor-code-views": [
+        "./src/index.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/code-extensions": [
+        "./src/code-extensions.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/procedure-editor": [
+        "./src/procedure-editor.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/variable-references": [
+        "./src/variable-references.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/variable-merge": [
+        "./src/variable-merge.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/target-combobox": [
+        "./src/target-combobox.tsx"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/sprite-code-windows": [
+        "./src/sprite-code-windows.tsx"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/detached-block-palette": [
+        "./src/detached-block-palette.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/palette-category-reorder": [
+        "./src/palette-category-reorder.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/palette-category-search": [
+        "./src/palette-category-search.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/palette-dropdown-resize": [
+        "./src/palette-dropdown-resize.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/palette-category-groups": [
+        "./src/palette-category-groups.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/palette-category-visibility": [
+        "./src/palette-category-visibility.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/palette-visibility-dialog": [
+        "./src/palette-visibility-dialog.tsx"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/block-argument-text": [
+        "./src/block-argument-text.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/block-number-input": [
+        "./src/block-number-input.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/clean-up-comments": [
+        "./src/clean-up-comments.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/sprite-copy-notice": [
+        "./src/sprite-copy-notice.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/script-layout": [
+        "./src/script-layout-view.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/target-undo-history": [
+        "./src/target-undo-history.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/sprite-restore-history": [
+        "./src/sprite-restore-history.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/asset-edit-session": [
+        "./src/asset-edit-session.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/dockview-unsaved": [
+        "./src/dockview-unsaved.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/horizontal-block-palette": [
+        "./src/horizontal-block-palette.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/context-menu-icons": [
+        "./src/context-menu-icons.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/palette-delete-preview": [
+        "./src/palette-delete-preview.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/code-popout": [
+        "./src/code-popout.tsx"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/desktop-code": [
+        "./src/desktop-code.ts"
+      ]
+    }
   },
   "include": [
     "src/**/*.ts",
