@@ -40,6 +40,7 @@ export interface ScriptViewMenuWorkspace {
 
 interface MenuConfig {
     label: string;
+    options?: MenuOption[];
     choices: (MenuOption & {checked: boolean})[];
 }
 
@@ -160,7 +161,7 @@ export function attachScriptViewMenu(
         // Only extend the options collected for this workspace, after the existing add-ons.
         ContextMenu.populate_ = (options, rtl) => {
             const config = getMenu();
-            const menu = populate.call(ContextMenu, [...options, triggerOption(config.label)], rtl);
+            const menu = populate.call(ContextMenu, [...options, triggerOption(config.label), ...(config.options ?? [])], rtl);
             addSubmenu(menu, options.length, config, rtl, ContextMenu);
             return menu;
         };
@@ -177,7 +178,9 @@ export function attachScriptViewMenu(
         event.stopPropagation();
         const config = getMenu();
         const rtl = workspace.RTL;
-        const menu = ContextMenu.populate_([triggerOption(config.label)], rtl);
+        const menu = ContextMenu.populate_([triggerOption(config.label), ...(config.options ?? []).map(option => ({...option,
+            callback() {WidgetDiv.hideIfOwner(surface); option.callback();}
+        }))], rtl);
         const outside = new document.defaultView.AbortController();
         WidgetDiv.show(surface, rtl, () => {
             outside.abort();

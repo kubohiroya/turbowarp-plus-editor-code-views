@@ -23,12 +23,31 @@ export interface ScriptRelationContext {
 type Point = {x: number; y: number};
 type Box = Point & {width: number; height: number};
 type Anchor = {id: string; box: Box; point(side: 'left' | 'right', fraction: number): Point};
-type Drawing = {relation: ScriptRelation; source?: Anchor; destination?: Anchor; count: number};
+type Drawing = {relation: ScriptRelation; source?: Anchor; destination?: Anchor; count: number;
+    serialRoute?: {right: number; top: number; clearance: number}};
+
+function roundedRoute(points: Point[], radius: number) {
+    let path = `M ${points[0].x} ${points[0].y}`;
+    for (let index = 1; index < points.length - 1; index++) {
+        const before = points[index - 1], corner = points[index], after = points[index + 1];
+        const entering = Math.hypot(corner.x - before.x, corner.y - before.y);
+        const leaving = Math.hypot(after.x - corner.x, after.y - corner.y);
+        const size = Math.min(radius, entering / 2, leaving / 2);
+        if (!size) {path += ` L ${corner.x} ${corner.y}`; continue;}
+        const first = {x: corner.x + (before.x - corner.x) * size / entering,
+            y: corner.y + (before.y - corner.y) * size / entering};
+        const last = {x: corner.x + (after.x - corner.x) * size / leaving,
+            y: corner.y + (after.y - corner.y) * size / leaving};
+        path += ` L ${first.x} ${first.y} Q ${corner.x} ${corner.y} ${last.x} ${last.y}`;
+    }
+    const end = points.at(-1);
+    return `${path} L ${end.x} ${end.y}`;
+}
 const ns = 'http://www.w3.org/2000/svg';
 // Keep the same sixteen-unit hourglass as the call graph's relation badge.
 const relationWaitGlyph = 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12';
 
-/** Keep the badge beside the receiving end of the cubic curve, leaving its stroke visible. */
+/** Keep the badge beside the receiving end of the path, leaving its stroke visible. */
 function waitBadgePoint(path: string, offset: number): Point {
     const values = path.match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
     const [sx, sy] = values;
@@ -249,7 +268,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         }};
     }
 
-    function arrowGeometry({relation, source, destination, count}: Drawing, matrix: DOMMatrix, inverse: DOMMatrix,
+    function arrowGeometry({relation, source, destination, count, serialRoute}: Drawing, matrix: DOMMatrix, inverse: DOMMatrix,
         area: DOMRect, highlighted: boolean) {
         // Anchor an external link to the viewport edge; the list itself remains keyboard accessible.
         const local = source ?? destination;
@@ -273,6 +292,14 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             path = `M ${start.x} ${start.y} C ${right} ${start.y}, ${right} ${top}, ${middle} ${top}` +
                 ` C ${left} ${top}, ${left} ${end.y}, ${end.x} ${end.y}`;
             badgePoint = {x: middle, y: top - 6};
+        }
+        if (serialRoute && source && destination) {
+            const {right, top, clearance} = serialRoute;
+            // Leave room beside every script before turning vertically, then return through the gap above the hat.
+            const approach = end.x - clearance;
+            path = roundedRoute([start, {x: right, y: start.y}, {x: right, y: top},
+                {x: approach, y: top}, {x: approach, y: end.y}, end], clearance);
+            badgePoint = {x: right, y: (start.y + top) / 2};
         }
         const head = `M ${end.x - 9} ${end.y - 5} L ${end.x} ${end.y} L ${end.x - 9} ${end.y + 5}`;
         let waitTransform: string | undefined;
@@ -412,6 +439,35 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             const existing = drawings.get(key);
             if (existing) existing.count++;
             else drawings.set(key, {relation, source, destination, count: 1});
+        }
+        if (projection) {
+            const unit = 1 / (Math.hypot(matrix.a, matrix.b) || 1);
+            const scripts = new Map<string, Box>();
+            for (const root of projection.querySelectorAll<SVGGraphicsElement>('[data-script-view-block]')) {
+                const rect = root.getBoundingClientRect();
+                const first = transform(inverse, {x: rect.left, y: rect.top});
+                const last = transform(inverse, {x: rect.right, y: rect.bottom});
+                scripts.set(root.getAttribute('data-script-view-block'),
+                    {x: first.x, y: first.y, width: last.x - first.x, height: last.y - first.y});
+            }
+            const rightEdge = [...scripts.values()].reduce((edge, box) => Math.max(edge, box.x + box.width), 0);
+            let lane = 0;
+            for (const drawing of drawings.values()) {
+                if (!drawing.source || !drawing.destination) continue;
+                const destination = scripts.get(drawing.relation.destination.scriptId);
+                if (!destination) continue;
+                drawing.serialRoute = {right: rightEdge + (96 + lane * 16) * unit,
+                    top: destination.y - (14 + lane % 4 * 6) * unit, clearance: 8 * unit};
+                lane++;
+            }
+            // Reserve actual scrollable SVG width for the right-hand routes while preserving the block scale.
+            const box = projection.viewBox.baseVal;
+            const width = Math.ceil(rightEdge + (112 + Math.max(0, lane - 1) * 16) * unit);
+            if (lane && width > box.width) {
+                const scale = Math.hypot(matrix.a, matrix.b);
+                projection.setAttribute('viewBox', `${box.x} ${box.y} ${width} ${box.height}`);
+                projection.setAttribute('width', String(width * scale));
+            }
         }
         const related = new Set<string>();
         for (const relation of graph) if (visibility[relation.kind] && dragging && incident(relation)) {

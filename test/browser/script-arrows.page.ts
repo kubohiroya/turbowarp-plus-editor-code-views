@@ -79,6 +79,7 @@ const receiver = (id: string, x: number, y: number) => ({
     let overview: ReturnType<typeof attachWorkspaceOverview> | undefined;
     let bridge: ReturnType<typeof attachCodeWorkspace> | undefined;
     let procedure: ReturnType<ReturnType<typeof attachCodeWorkspace>['editProcedure']> | undefined;
+    let serialEditor;
     const integrationErrors: string[] = [];
     let centeredScript: string | undefined;
     let projection: HTMLDivElement | undefined;
@@ -109,12 +110,27 @@ const receiver = (id: string, x: number, y: number) => ({
         async attachLayout() {
             arrows.dispose();
             scriptView?.dispose();
-            scriptView = attachScriptView({workspace, ScratchBlocks: Blockly, getLocale: () => 'en',
+            bridge ??= attachCodeWorkspace({vm, ScratchBlocks: Blockly, workspace,
+                options: {...workspace.options, media: './media/', zoom: {startScale: 1}},
+                onError: (error: unknown) => integrationErrors.push(String(error))});
+            const editProcedure = bridge.editProcedure;
+            bridge.editProcedure = function (...args) {
+                const editor = editProcedure.apply(this, args);
+                serialEditor = editor.workspace;
+                return editor;
+            };
+            scriptView = attachScriptView({workspace, ScratchBlocks: Blockly, getLocale: () => document.documentElement.lang || 'en',
                 relations: {vm, getTarget: () => vm.editingTarget}, hasWorkspaceMenu: () => false});
             arrows = scriptView.relations!;
             await settle();
         },
         async layout(value: 'free' | 'z' | 'n') {scriptView?.setView(value); await settle();},
+        get serialEditor() {return serialEditor;},
+        locations() {
+            return Object.values(vm.editingTarget.blocks._blocks).filter((block: any) => block.topLevel)
+                .map(({id, x, y}: any) => ({id, x, y})).sort((a, b) => a.id.localeCompare(b.id));
+        },
+        async flush() {Blockly.Events.fireNow_(); await settle();},
         async attachCatalogContext() {
             arrows.dispose();
             const relations = readScriptRelations(vm.runtime.targets);
