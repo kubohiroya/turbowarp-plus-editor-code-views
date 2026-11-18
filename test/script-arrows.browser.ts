@@ -104,6 +104,35 @@ test('a VM-free child context resolves destination names from its catalog and le
     await page.close();
 });
 
+test('the arrow controls stay below a horizontal palette, follow its height, and return to the vertical top margin', async () => {
+    const {page, errors} = await open();
+    await page.evaluate(() => {
+        const toolbox = document.querySelector('.blocklyToolboxDiv') as HTMLElement;
+        toolbox.dataset.testOriginalStyle = toolbox.style.cssText;
+        toolbox.setAttribute('data-horizontal-block-palette', '');
+        Object.assign(toolbox.style, {position: 'absolute', top: '0px', left: '0px', width: '100%', height: '50px'});
+    });
+    const belowPalette = () => page.waitForFunction(() => {
+        const toolbox = document.querySelector('.blocklyToolboxDiv')!.getBoundingClientRect();
+        const controls = document.querySelector('.tw-script-relation-controls')!.getBoundingClientRect();
+        return controls.top >= toolbox.bottom + 9;
+    });
+    await belowPalette();
+    const topAt50 = (await page.locator('.tw-script-relation-controls').boundingBox())!.y;
+    await page.evaluate(() => {(document.querySelector('.blocklyToolboxDiv') as HTMLElement).style.height = '80px';});
+    await belowPalette();
+    const topAt80 = (await page.locator('.tw-script-relation-controls').boundingBox())!.y;
+    assert.ok(Math.abs(topAt80 - topAt50 - 30) < 1, 'palette resizing updates the margin without an explicit redraw');
+    await page.evaluate(() => {
+        const toolbox = document.querySelector('.blocklyToolboxDiv') as HTMLElement;
+        toolbox.removeAttribute('data-horizontal-block-palette');
+        toolbox.style.cssText = toolbox.dataset.testOriginalStyle!;
+    });
+    await page.waitForFunction(() => (document.querySelector('.tw-script-relation-controls') as HTMLElement).style.top === '10px');
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
 test('keyboard input on a destination button cannot delete or undo the selected block and Enter still navigates', async () => {
     const {page, errors} = await open();
     await page.evaluate(() => {

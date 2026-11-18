@@ -166,6 +166,11 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         frame = undefined;
         if (disposed) return;
         const strings = text();
+        const toolbox = injection.querySelector<HTMLElement>(':scope > .blocklyToolboxDiv');
+        const toolboxBounds = toolbox?.getBoundingClientRect();
+        const horizontal = toolbox?.hasAttribute('data-horizontal-block-palette');
+        // The horizontal palette sits above the blocks, including in the Editor's default layout.
+        controls.style.top = `${horizontal ? Math.max(10, toolboxBounds.bottom - injection.getBoundingClientRect().top + 10) : 10}px`;
         title.textContent = strings.title;
         controls.setAttribute('aria-label', strings.title);
         legend.replaceChildren();
@@ -341,6 +346,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     if (dragSurface) mutations.observe(dragSurface, {attributes: true, childList: true, subtree: true});
     const resized = new view.ResizeObserver(update);
     resized.observe(injection);
+    const toolbox = injection.querySelector('.blocklyToolboxDiv');
+    if (toolbox) resized.observe(toolbox);
     injection.addEventListener('pointerover', selectedScript);
     injection.addEventListener('pointerdown', selectedScript);
     const language = new view.MutationObserver(update);
