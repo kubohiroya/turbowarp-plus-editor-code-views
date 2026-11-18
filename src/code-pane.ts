@@ -1,7 +1,8 @@
 import {getCodeSession} from './workspace.ts';
 import type {AttachPreviewMinimap, AttachWorkspaceNavigation} from './workspace.ts';
-import {getDockedScriptLayout, type ScriptView} from './script-layout-view.ts';
+import {getDockedScriptLayout, setDockedRelationVisibility, type ScriptView} from './script-layout-view.ts';
 import {readScriptRelations, type RelationTarget} from './script-relations.ts';
+import type {ScriptRelationVisibility} from './script-arrows.ts';
 
 type Pane = {id: string; targetId: string; section: number};
 type Bridge = NonNullable<ReturnType<typeof getCodeSession>['bridge']>;
@@ -14,6 +15,7 @@ export type SavedCodePane = {
     x: number;
     y: number;
     scriptView?: ScriptView;
+    relationVisibility?: ScriptRelationVisibility;
 };
 
 const scriptViews: readonly ScriptView[] = ['free', 'z', 'n'];
@@ -22,15 +24,22 @@ const finite = (value: unknown, limit: number): value is number =>
 
 /** Read a saved code area back, or nothing if it does not have the shape `serialize` writes. */
 export function readSavedCodePane(value: Record<string, unknown>): SavedCodePane | undefined {
-    const {scale, x, y, scriptView} = value;
+    const {scale, x, y, scriptView, relationVisibility} = value;
     if (!finite(scale, 100) || scale <= 0 || !finite(x, 1e7) || !finite(y, 1e7)) return;
-    return {scale, x, y, ...(scriptViews.includes(scriptView as ScriptView) && {scriptView: scriptView as ScriptView})};
+    const visibility = relationVisibility as Partial<ScriptRelationVisibility> | null;
+    return {scale, x, y, ...(scriptViews.includes(scriptView as ScriptView) && {scriptView: scriptView as ScriptView}),
+        ...(visibility && typeof visibility.function === 'boolean' && typeof visibility.message === 'boolean' &&
+            {relationVisibility: {function: visibility.function, message: visibility.message}})};
 }
 
 export function createCodePaneAdapter(vm, locale: string, attachMinimap?: AttachPreviewMinimap) {
     const session = getCodeSession(vm);
     const label = /^ja(?:-|$)/i.test(locale) ? 'このペインでコードを編集' : 'Edit code in this pane';
     const views = new Map<string, ScriptView>();
+    const visibilities = new Map<string, ScriptRelationVisibility>();
+    const visibilityListeners = new Set<() => void>();
+    const getVisibility = (paneId: string): ScriptRelationVisibility =>
+        ({...visibilities.get(paneId) ?? {function: true, message: true}});
     // Views that show one script, a hat or a function, by pane id; `onLost` runs when that script is deleted.
     const focused = new Map<string, {scriptId: string; onLost?: () => void}>();
     // The code pane the code area is in, which shows its script there.
@@ -73,6 +82,22 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
     }
 
     return {
+        /** Independent arrow filters belong to a code pane, including when its workspace is parked. */
+        relations: {
+            getVisibility,
+            setVisibility(paneId: string, value: ScriptRelationVisibility) {
+                const before = getVisibility(paneId);
+                if (before.function === value.function && before.message === value.message) return;
+                visibilities.set(paneId, {...value});
+                if (current === paneId) setDockedRelationVisibility(vm, value);
+                for (const listener of visibilityListeners) listener();
+                session.changed();
+            },
+            subscribe(listener: () => void) {
+                visibilityListeners.add(listener);
+                return () => visibilityListeners.delete(listener);
+            }
+        },
         /**
          * Make a code view show one script, a hat or a function, or every script again without `scriptId`.
          * The code area shows it while it is in that view, and the view's preview shows it otherwise.
@@ -89,8 +114,10 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
         forgetPane(paneId: string) {
             focused.delete(paneId);
             views.delete(paneId);
+            visibilities.delete(paneId);
             if (current === paneId) {
                 current = undefined;
+                setDockedRelationVisibility(vm, {function: true, message: true});
                 applyFocus(undefined);
             }
         },
@@ -118,7 +145,9 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
             if (!shown) return;
             const scriptView = presentation ? presentation.scriptView : views.get(pane.id) ??
                 getDockedScriptLayout(vm)?.view.view;
-            return {scale: shown.scale, x: shown.x, y: shown.y, ...(scriptView && {scriptView})};
+            const relationVisibility = visibilities.get(pane.id) ?? shown.relationVisibility;
+            return {scale: shown.scale, x: shown.x, y: shown.y, ...(scriptView && {scriptView}),
+                ...(relationVisibility && {relationVisibility: {...relationVisibility}})};
         },
         /** A presentation from a saved code area. The preview draws it without the chrome of the code area. */
         deserialize(pane: Pane, value: Record<string, unknown>): Presentation | undefined {
@@ -126,13 +155,22 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
             const saved = readSavedCodePane(value);
             if (!saved) return;
             if (saved.scriptView) views.set(pane.id, saved.scriptView);
-            return {scale: saved.scale, x: saved.x, y: saved.y, visible: true, ...(saved.scriptView && {scriptView: saved.scriptView})};
+            if (saved.relationVisibility) visibilities.set(pane.id, {...saved.relationVisibility});
+            else visibilities.delete(pane.id);
+            for (const listener of visibilityListeners) listener();
+            return {scale: saved.scale, x: saved.x, y: saved.y, visible: true, ...(saved.scriptView && {scriptView: saved.scriptView}),
+                ...(saved.relationVisibility && {relationVisibility: {...saved.relationVisibility}})};
         },
         restore(pane: Pane, presentation?: Presentation) {
             if (pending) cancelAnimationFrame(pending.frame);
             pending = undefined;
             if (pane.section !== 0) return;
             current = pane.id;
+            if (!visibilities.has(pane.id) && presentation?.relationVisibility) {
+                visibilities.set(pane.id, {...presentation.relationVisibility});
+                for (const listener of visibilityListeners) listener();
+            }
+            setDockedRelationVisibility(vm, getVisibility(pane.id));
             applyFocus(pane.id);
             getDockedScriptLayout(vm)?.view.setView(views.get(pane.id) ?? 'free');
             if (!presentation) return;
@@ -186,8 +224,10 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
                     shownScript = focused.get(pane.id)?.scriptId;
                     preview = bridge?.preview(blocks, chrome, {target, presentation, attachMinimap, watermark, locale, dropElement: surface,
                         scriptView: views.get(pane.id), onScriptViewChange: view => views.set(pane.id, view),
+                        relationVisibility: getVisibility(pane.id),
                         scriptId: focused.get(pane.id)?.scriptId});
                 }
+                preview?.setRelationVisibility(getVisibility(pane.id));
                 preview?.update();
             }
             const unsubscribe = session.subscribe(update);

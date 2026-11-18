@@ -59,6 +59,172 @@ const activateScript = async (page: Page, id: string, scope = '.blocklyBlockCanv
     await page.evaluate(() => (globalThis as any).fixture.settle());
 };
 
+test('function and message filters independently remove arrows, guides and hidden work', async () => {
+    const {page, errors} = await open();
+    await activateScript(page, 'start');
+    const messages = await relation(page, 'message').count();
+    assert.ok(messages > 0);
+    for (const [functions, messagesVisible] of [[false, true], [true, false], [false, false], [true, true]]) {
+        await page.evaluate(async ([functions, message]) => {
+            const f = (globalThis as any).fixture;
+            f.arrows.setVisibility({function: functions, message});
+            await f.settle();
+        }, [functions, messagesVisible]);
+        assert.equal(await relation(page, 'function').count(), functions ? 3 : 0);
+        assert.equal(await relation(page, 'message').count(), messagesVisible ? messages : 0);
+        assert.equal(await page.getByRole('button', {name: /Secondary.*go/}).count(), messagesVisible ? 2 : 0);
+    }
+    const reads = await page.evaluate(async () => {
+        const f = (globalThis as any).fixture;
+        f.arrows.setVisibility({function: false, message: false});
+        let reads = 0;
+        const canvas = f.workspace.getCanvas();
+        const original = canvas.getScreenCTM;
+        canvas.getScreenCTM = function () {reads++; return original.call(this);};
+        try {
+            f.workspace.translate(350, 40);
+            await f.move('definition', 5, 0);
+            await f.settle();
+            return reads;
+        } finally {canvas.getScreenCTM = original;}
+    });
+    assert.equal(reads, 0, 'both filters off skip coordinate reads even after scroll and edits');
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('arrow repaint measures the viewport once and never mutates the minimap block canvas', async () => {
+    const {page, errors} = await open();
+    const result = await page.evaluate(async () => {
+        const f = (globalThis as any).fixture;
+        const svg = f.workspace.getParentSvg();
+        const canvas = f.workspace.getCanvas();
+        const bounds = svg.getBoundingClientRect;
+        let reads = 0, mutations = 0;
+        svg.getBoundingClientRect = function () {reads++; return bounds.call(this);};
+        const observer = new MutationObserver(records => {mutations += records.length;});
+        observer.observe(canvas, {childList: true, attributes: true, subtree: true});
+        try {await f.settle(); return {reads, mutations};}
+        finally {svg.getBoundingClientRect = bounds; observer.disconnect();}
+    });
+    assert.equal(result.reads, 1, 'all arrows share one viewport measurement');
+    assert.equal(result.mutations, 0, 'arrow changes cannot invalidate the minimap shapes');
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('panning reuses internal arrows and anchors while keeping remote links at the viewport edge', async () => {
+    const {page, errors} = await open();
+    const result = await page.evaluate(async () => {
+        const f = (globalThis as any).fixture;
+        const canvas = f.workspace.getCanvas();
+        const internal = document.querySelector('[data-source-call="call-1"]');
+        const internalPath = internal.querySelector('.tw-script-relation-line');
+        const anchor = f.workspace.getBlockById('call-1').getSvgRoot().querySelector('.blocklyPath');
+        const original = anchor.getScreenCTM;
+        let reads = 0;
+        anchor.getScreenCTM = function () {reads++; return original.call(this);};
+        try {
+            f.workspace.translate(380, 45);
+            await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+            const remote = document.querySelector<SVGPathElement>('[data-source-call="send"][data-destination-block="remote-receive"] .tw-script-relation-line');
+            const point = remote.getPointAtLength(remote.getTotalLength());
+            const matrix = remote.getScreenCTM();
+            const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+            const area = f.workspace.getParentSvg().getBoundingClientRect();
+            return {same: internal === document.querySelector('[data-source-call="call-1"]') &&
+                internalPath === internal.querySelector('.tw-script-relation-line'), reads,
+                transform: canvas.previousElementSibling.getAttribute('transform') === canvas.getAttribute('transform'),
+                edge: Math.abs(screen.x - (area.right - 12)) < .1};
+        } finally {anchor.getScreenCTM = original;}
+    });
+    assert.deepEqual(result, {same: true, reads: 0, transform: true, edge: true});
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('moving an unrelated script keeps existing relationship lines in place', async () => {
+    const {page, errors} = await open();
+    const same = await page.evaluate(async () => {
+        const f = (globalThis as any).fixture;
+        const group = document.querySelector('[data-source-call="call-1"]');
+        const path = group.querySelector('.tw-script-relation-line');
+        await f.move('unrelated', 15, 0);
+        return group === document.querySelector('[data-source-call="call-1"]') &&
+            path === group.querySelector('.tw-script-relation-line');
+    });
+    assert.equal(same, true);
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('function and message roles always leave the right side and enter the left side, including reversed layouts', async () => {
+    const {page, errors} = await open();
+    const check = async () => {
+        const results = await page.evaluate(() => {
+            const w = (globalThis as any).fixture.workspace;
+            return [['call-1', 'definition'], ['send', 'receive'], ['recursive', 'definition']].map(([source, destination]) => {
+                const line = document.querySelector<SVGPathElement>(`[data-source-call="${source}"][data-destination-block="${destination}"] .tw-script-relation-line`);
+                const matrix = line.getScreenCTM();
+                const first = line.getPointAtLength(0), last = line.getPointAtLength(line.getTotalLength());
+                const start = new DOMPoint(first.x, first.y).matrixTransform(matrix);
+                const end = new DOMPoint(last.x, last.y).matrixTransform(matrix);
+                const box = id => w.getBlockById(id).getSvgRoot().querySelector(':scope > .blocklyPath').getBoundingClientRect();
+                return {source: Math.abs(start.x - box(source).right), destination: Math.abs(end.x - box(destination).left)};
+            });
+        });
+        assert.ok(results.every(item => item.source < 1.5 && item.destination < 1.5), JSON.stringify(results));
+    };
+    await check();
+    await page.evaluate(async () => {
+        const f = (globalThis as any).fixture;
+        await f.move('definition', -350, 0); await f.move('receive', -680, 0);
+    });
+    await check();
+    await page.evaluate(() => (globalThis as any).fixture.rtl(true));
+    await check();
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('background dragging follows the workspace drag surface without changing its native canvas children', async () => {
+    const {page, errors} = await open();
+    const result = await page.evaluate(async () => {
+        const f = (globalThis as any).fixture;
+        const w = f.workspace;
+        // The minimal runtime does not inject this optional surface; use Blockly's real implementation.
+        const surface = new (globalThis as any).Blockly.WorkspaceDragSurfaceSvg(w.getInjectionDiv());
+        surface.createDom();
+        w.workspaceDragSurface_ = surface;
+        w.useWorkspaceDragSurface_ = true;
+        await f.attachLayout();
+        const settle = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        const origin = w.getCanvas().parentNode;
+        w.setupDragSurface();
+        w.translate(420, 40);
+        await settle();
+        const layer = document.querySelector('[data-script-relation-layer]') as SVGGraphicsElement;
+        const first = layer.querySelector('[data-source-call="call-1"]');
+        const sameMatrix = () => {
+            const a = w.getCanvas().getScreenCTM(), b = layer.getScreenCTM();
+            return ['a', 'b', 'c', 'd', 'e', 'f'].every(key => Math.abs(a[key] - b[key]) < .01);
+        };
+        const firstAligned = sameMatrix();
+        w.translate(470, 65);
+        await settle();
+        const aligned = sameMatrix();
+        const same = first === layer.querySelector('[data-source-call="call-1"]');
+        const children = [...w.getCanvas().parentNode.children].map(node => node.getAttribute('class'));
+        w.resetDragSurface();
+        await settle();
+        return {firstAligned, aligned, same, children, restored: w.getCanvas().parentNode === origin && sameMatrix()};
+    });
+    assert.deepEqual(result, {firstAligned: true, aligned: true, same: true,
+        children: ['blocklyBlockCanvas', 'blocklyBubbleCanvas'], restored: true});
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
 test('function and message arrows use distinct shared styles behind the blocks without intercepting input', async () => {
     const {page, errors} = await open();
     const styles = await page.locator('.tw-script-relation-line').evaluateAll(lines => lines.map(line => {
@@ -75,7 +241,7 @@ test('function and message arrows use distinct shared styles behind the blocks w
     assert.ok(messages.every(style => style.stroke === messages[0].stroke && style.dash !== 'none'));
     assert.ok(styles.every(style => style.pointerEvents === 'none'));
     assert.ok(await page.locator('[data-script-relation-layer]').evaluate(layer =>
-        layer.parentElement?.firstElementChild === layer), 'the layer is below the Blockly block roots');
+        layer.nextElementSibling?.classList.contains('blocklyBlockCanvas')), 'the layer is below and outside the Blockly block canvas');
     assert.equal(await page.locator('[data-script-relation-layer] [marker-end]').count(), 0,
         'arrowheads do not depend on URL ids that would break in a copied or detached view');
     assert.deepEqual(errors, []);
@@ -89,12 +255,24 @@ test('message destinations in other sprites are accessible and send-and-wait kee
     assert.equal(await waiting.locator('.tw-script-relation-wait').count(), 2,
         'the same wait mark appears on local and remote receiver edges');
     assert.equal(await sending.locator('.tw-script-relation-wait').count(), 0);
+    const paint = () => waiting.evaluateAll(groups => groups.map(group => ({
+        external: group.hasAttribute('data-script-external'), opacity: getComputedStyle(group).opacity,
+        stroke: getComputedStyle(group.querySelector('.tw-script-relation-line')).strokeOpacity
+    })));
+    assert.deepEqual(await paint(), [
+        {external: false, opacity: '1', stroke: '0.2'}, {external: true, opacity: '0.05', stroke: '1'}
+    ]);
     await activateScript(page, 'start');
+    assert.deepEqual(await paint(), [
+        {external: false, opacity: '1', stroke: '1'}, {external: true, opacity: '0.05', stroke: '1'}
+    ], 'highlighting keeps external arrows at five percent');
     const destination = page.getByRole('button', {name: /Secondary.*go/}).first();
     await destination.click();
     await page.waitForFunction(() => (globalThis as any).fixture.vm.editingTarget.getName() === 'Secondary');
     await page.waitForFunction(() => !document.querySelector('[data-script-relation="function"][data-source-call="call-1"]'));
     assert.equal(await page.locator('[data-script-relation="function"][data-source-call="call-1"]').count(), 0);
+    assert.deepEqual(await paint(), [{external: true, opacity: '0.05', stroke: '1'}],
+        'an incoming edge with its source in another sprite uses the same opacity');
     assert.deepEqual(errors, []);
     await page.close();
 });
@@ -200,8 +378,8 @@ test('serial layout projections reuse the same styles and folded anchors in both
         const messages = await projected.locator('[data-script-relation="message"] .tw-script-relation-line')
             .evaluateAll(lines => lines.map(line => getComputedStyle(line).strokeDasharray));
         assert.ok(messages.length > 0 && messages.every(dash => dash !== 'none'));
-        assert.equal(await page.locator('.blocklyBlockCanvas > [data-script-relation-layer]')
-            .evaluate(layer => getComputedStyle(layer).display), 'none');
+        assert.equal(await page.locator('.blocklyBlockCanvas').first()
+            .evaluate(canvas => getComputedStyle(canvas.previousElementSibling).display), 'none');
     }
     await page.evaluate(async () => {
         await (globalThis as any).fixture.fold('start', true);
@@ -240,8 +418,8 @@ test('the integrated script view switches Z, N and free layouts without a redraw
     }
     await page.evaluate(() => (globalThis as any).fixture.layout('free'));
     assert.equal(await page.locator('.tw-script-view-surface').getAttribute('hidden'), '');
-    assert.equal(await page.locator('.blocklyBlockCanvas > [data-script-relation-layer]')
-        .evaluate(layer => getComputedStyle(layer).display), 'inline');
+    assert.equal(await page.locator('.blocklyBlockCanvas').first()
+        .evaluate(canvas => getComputedStyle(canvas.previousElementSibling).display), 'inline');
     assert.equal(await relation(page, 'function').count(), 3);
     assert.deepEqual(errors, []);
     await page.close();

@@ -7,6 +7,7 @@ import {arrangeScripts} from '../../dist/script-layout.js';
 import {attachScriptView} from '../../dist/script-layout-view.js';
 import {attachCodeWorkspace} from '../../dist/workspace.js';
 import {readScriptRelations} from '../../dist/script-relations.js';
+import {attachWorkspaceOverview} from '../../dist/workspace-overview.js';
 
 declare const EditorRuntime: any;
 declare const Blockly: any;
@@ -75,6 +76,7 @@ const receiver = (id: string, x: number, y: number) => ({
     workspace.translate(310, 0);
     let arrows = attachScriptArrows({workspace, vm, getTarget: () => vm.editingTarget, getLocale: () => 'en'});
     let scriptView: ReturnType<typeof attachScriptView> | undefined;
+    let overview: ReturnType<typeof attachWorkspaceOverview> | undefined;
     let bridge: ReturnType<typeof attachCodeWorkspace> | undefined;
     let procedure: ReturnType<ReturnType<typeof attachCodeWorkspace>['editProcedure']> | undefined;
     const integrationErrors: string[] = [];
@@ -98,6 +100,12 @@ const receiver = (id: string, x: number, y: number) => ({
     };
     (globalThis as any).fixture = {
         get arrows() {return arrows;}, vm, workspace, host, fold, settle,
+        async attachOverview() {
+            overview?.dispose();
+            overview = attachWorkspaceOverview({workspace, ScratchBlocks: Blockly});
+            await settle();
+        },
+        disposeOverview() {overview?.dispose();},
         async attachLayout() {
             arrows.dispose();
             scriptView?.dispose();

@@ -5,8 +5,8 @@ import {isFoldedDefinition, removeObsoleteProcedureInputs, setFoldedDefinition} 
 import {decodeEdit, encodeEdit, isCommentEdit} from './protocol.ts';
 import {captureCodePreviewChrome} from './preview-chrome.ts';
 import type {PresentationElements} from './preview-chrome.ts';
-import {attachScriptView, getDockedScriptLayout, type ScriptView} from './script-layout-view.ts';
-import {attachScriptArrows, registerScriptRelationNavigation} from './script-arrows.ts';
+import {attachScriptView, getDockedScriptLayout, getDockedRelationVisibility, type ScriptView} from './script-layout-view.ts';
+import {attachScriptArrows, registerScriptRelationNavigation, type ScriptRelationVisibility} from './script-arrows.ts';
 import type {RelationBlock, ScriptEndpoint} from './script-relations.ts';
 import {fitScriptInWorkspace} from './script-fit.ts';
 
@@ -21,6 +21,7 @@ export interface Presentation {
     y: number;
     visible: boolean;
     scriptView?: ScriptView;
+    relationVisibility?: ScriptRelationVisibility;
     /** Missing for a presentation read back from a saved workspace; the preview then draws without it. */
     chrome?: ReturnType<typeof captureCodePreviewChrome>;
 }
@@ -447,6 +448,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
             y: workspace.scrollY + metrics.absoluteTop,
             visible,
             scriptView: getDockedScriptLayout(vm)?.view.view,
+            relationVisibility: getDockedRelationVisibility(vm),
             chrome: captureCodePreviewChrome(workspace, loadedTarget, presentationElements, includeNavigation)
         };
     }
@@ -587,7 +589,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
             const minimap = attachMinimap?.(preview, blocks, watermark);
             const scriptView = attachScriptView({workspace: preview, ScratchBlocks: blocks, mount: chrome.parentElement,
                 getLocale: () => locale ?? workspace.getInjectionDiv().ownerDocument.documentElement.lang,
-                relations: {vm, getTarget: () => target},
+                relations: {vm, getTarget: () => target, initialVisibility: view.relationVisibility ?? presentation?.relationVisibility},
                 initialView: view.scriptView ?? presentation?.scriptView,
                 onChange: next => {
                     if (presentation) presentation.scriptView = next;
@@ -624,6 +626,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
             observer.observe(element);
             return {
                 workspace: preview,
+                setRelationVisibility: (visibility: ScriptRelationVisibility) => scriptView.relations?.setVisibility(visibility),
                 update() {
                     if (vm.runtime.getTargetById(target.id) !== target) return;
                     // A view that shows one script previews only that script.

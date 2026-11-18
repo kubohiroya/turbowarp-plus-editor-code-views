@@ -3,6 +3,7 @@ import {EventEmitter} from 'node:events';
 import {test} from 'node:test';
 import {createCodePaneAdapter, readSavedCodePane, readScriptRelationGraph} from '../dist/code-pane.js';
 import {getCodeSession} from '../dist/workspace.js';
+import {getDockedRelationVisibility} from '../dist/script-layout-view.js';
 
 function setup() {
     const vm = Object.assign(new EventEmitter(), {runtime: {getTargetById: () => undefined}});
@@ -19,6 +20,47 @@ function setup() {
 }
 
 const pane = (section = 0) => ({id: 'view-1', targetId: 'hero', section});
+
+test('arrow filters belong to each code pane and survive saved workspace restore', () => {
+    const {adapter, vm} = setup();
+    const other = {...pane(), id: 'view-2'};
+    let notifications = 0;
+    const unsubscribe = adapter.relations.subscribe(() => notifications++);
+    adapter.restore(pane());
+    adapter.relations.setVisibility(pane().id, {function: false, message: true});
+    assert.deepEqual(getDockedRelationVisibility(vm), {function: false, message: true});
+    assert.deepEqual(adapter.relations.getVisibility(other.id), {function: true, message: true});
+    adapter.restore(other);
+    assert.deepEqual(getDockedRelationVisibility(vm), {function: true, message: true});
+    adapter.restore(pane());
+    assert.deepEqual(getDockedRelationVisibility(vm), {function: false, message: true});
+    const saved = adapter.serialize(pane());
+    assert.deepEqual(saved.relationVisibility, {function: false, message: true});
+    const restored = setup().adapter;
+    const snapshot = restored.deserialize(pane(), saved);
+    assert.deepEqual(snapshot.relationVisibility, {function: false, message: true});
+    assert.deepEqual(restored.relations.getVisibility(pane().id), {function: false, message: true});
+    const copy = adapter.relations.getVisibility(pane().id);
+    copy.message = false;
+    assert.equal(adapter.relations.getVisibility(pane().id).message, true, 'callers cannot mutate stored settings');
+    adapter.relations.setVisibility(pane().id, {function: false, message: true});
+    assert.equal(notifications, 1, 'unchanged filters do not repaint other previews');
+    unsubscribe();
+    adapter.relations.setVisibility(other.id, {function: true, message: false});
+    assert.equal(notifications, 1);
+    adapter.forgetPane(pane().id);
+    assert.deepEqual(adapter.relations.getVisibility(pane().id), {function: true, message: true});
+});
+
+test('saved arrow filters only accept booleans and copy the supplied values', () => {
+    for (const relationVisibility of [null, 'off', {}, {function: false}, {function: 'false', message: true}]) {
+        assert.deepEqual(readSavedCodePane({scale: 1, x: 0, y: 0, relationVisibility}), {scale: 1, x: 0, y: 0});
+    }
+    const relationVisibility = {function: false, message: false};
+    const saved = readSavedCodePane({scale: 1, x: 0, y: 0, relationVisibility});
+    relationVisibility.function = true;
+    assert.deepEqual(saved.relationVisibility, {function: false, message: false});
+});
 
 test('the calls panel receives named script endpoints without mixing the same block id in different sprites', () => {
     const blocks = {
