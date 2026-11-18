@@ -277,10 +277,9 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         const head = `M ${end.x - 9} ${end.y - 5} L ${end.x} ${end.y} L ${end.x - 9} ${end.y + 5}`;
         let waitTransform: string | undefined;
         if (relation.kind === 'message' && relation.wait) {
-            const scale = Math.hypot(matrix.a, matrix.b) || 1;
-            const point = waitBadgePoint(path, 24 / scale);
-            badgePoint = {x: point.x + 16 / scale, y: point.y + 4 / scale};
-            waitTransform = `translate(${point.x} ${point.y}) scale(${1 / scale})`;
+            const point = waitBadgePoint(path, 24);
+            badgePoint = {x: point.x + 16, y: point.y + 4};
+            waitTransform = `translate(${point.x} ${point.y})`;
         }
         return {path, head, recursive, badgePoint, waitTransform};
     }
