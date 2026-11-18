@@ -29,9 +29,9 @@ const near = (actual: number, expected: number, label: string, tolerance = 2) =>
 const inside = (result: any) => result.box.left >= result.view.left + 22 &&
     result.box.right <= result.view.right - 22 && result.box.top >= result.view.top + 22 &&
     result.box.bottom <= result.view.bottom - 22;
-const centered = (result: any) => {
-    near((result.box.left + result.box.right) / 2, (result.view.left + result.view.right) / 2, 'horizontal center');
-    near((result.box.top + result.box.bottom) / 2, (result.view.top + result.view.bottom) / 2, 'vertical center');
+const topLeft = (result: any) => {
+    near(result.first.left, result.view.left + 24, 'first block left');
+    near(result.first.top, result.view.top + 24, 'first block top');
 };
 const fit = (page: Page, id: string) => page.evaluate(value => (globalThis as any).fitFixture.fit(value), id);
 const focus = (page: Page, id: string, refit = false) =>
@@ -46,7 +46,7 @@ test('the complete selected script fits the usable viewport and leaves unrelated
         await expect.poll(async () => inside(await inspect(page, 'medium'))).toBe(true);
         const result = await inspect(page, 'medium');
         assert.ok(result.scale > .5 && result.scale < 1.25);
-        centered(result);
+        topLeft(result);
         assert.deepEqual(await page.evaluate(() => (globalThis as any).fitFixture.locations()), before);
         assert.equal(result.undo, undo, 'fitting never creates a block edit');
         assert.deepEqual(errors, []);
@@ -70,12 +70,11 @@ test('fitting refreshes an already visible SVG after its panel shrinks without a
         near(current.view.width, before.view.width - 450, 'updated viewport width');
         near(current.view.height, before.view.height - 200, 'updated viewport height');
         assert.ok(current.box.left >= current.view.left + 22 && current.box.right <= current.view.right - 22);
-        near((current.box.left + current.box.right) / 2, (current.view.left + current.view.right) / 2,
-            'resized horizontal center');
+        topLeft(current);
         if (Math.abs(current.scale - .5) < .001) near(current.box.top, current.view.top + 24, 'resized floor top');
         else {
             assert.ok(inside(current));
-            centered(current);
+            topLeft(current);
         }
         assert.deepEqual(errors, []);
     } finally {await page.close();}
@@ -89,12 +88,7 @@ test('small scripts stop at the automatic zoom ceiling and stricter workspace ce
             const result = await inspect(page, 'small');
             near(result.scale, expected, 'zoom ceiling', .001);
             assert.ok(inside(result));
-            if (maxScale < .5) {
-                // Disjoint zoom bounds collapse to the workspace ceiling, which is also the fit floor.
-                near(result.box.top, result.view.top + 24, 'collapsed zoom range top');
-                near((result.box.left + result.box.right) / 2, (result.view.left + result.view.right) / 2,
-                    'horizontal center');
-            } else centered(result);
+            topLeft(result);
             assert.deepEqual(errors, []);
         } finally {await page.close();}
     }
@@ -109,13 +103,13 @@ test('tall scripts stop at the zoom floor and keep their top visible with a 24px
             near(result.scale, expected, 'zoom floor', .001);
             assert.ok(result.box.height > result.view.height - 48);
             near(result.box.top, result.view.top + 24, 'overflow top');
-            near((result.box.left + result.box.right) / 2, (result.view.left + result.view.right) / 2, 'narrow script center');
+            topLeft(result);
             assert.deepEqual(errors, []);
         } finally {await page.close();}
     }
 });
 
-test('wide procedure scripts keep the leading edge visible in LTR and RTL, including their raised hats', async () => {
+test('wide procedure scripts keep the first block at the top left in LTR and RTL, including raised hats', async () => {
     for (const rtl of [false, true]) {
         const {page, errors} = await open({rtl});
         try {
@@ -123,8 +117,7 @@ test('wide procedure scripts keep the leading edge visible in LTR and RTL, inclu
             const result = await inspect(page, 'wide');
             near(result.scale, .5, 'wide script floor', .001);
             assert.ok(result.box.width > result.view.width - 48);
-            near(rtl ? result.box.right : result.box.left, rtl ? result.view.right - 24 : result.view.left + 24,
-                rtl ? 'RTL leading edge' : 'LTR leading edge');
+            topLeft(result);
             // Reaching the floor aligns the entire raised hat to the top, even when only width overflows.
             near(result.box.top, result.view.top + 24, 'wide script floor top');
             assert.deepEqual(errors, []);
@@ -145,9 +138,23 @@ test('missing or hidden workspaces do not mutate the viewport and a focused hidd
         await focus(page, 'medium');
         await page.evaluate(() => (globalThis as any).fitFixture.visible(true));
         await expect.poll(async () => inside(await inspect(page, 'medium'))).toBe(true);
-        centered(await inspect(page, 'medium'));
+        topLeft(await inspect(page, 'medium'));
         assert.deepEqual(errors, []);
     } finally {await page.close();}
+});
+
+test('a wider block below the hat does not move the first block away from the top left', async () => {
+    for (const rtl of [false, true]) {
+        const {page, errors} = await open({rtl});
+        try {
+            await focus(page, 'offset');
+            const result = await inspect(page, 'offset');
+            topLeft(result);
+            assert.ok(result.box.width > result.first.right - result.first.left + 100);
+            if (rtl) assert.ok(result.box.left < result.first.left - 100);
+            assert.deepEqual(errors, []);
+        } finally {await page.close();}
+    }
 });
 
 test('focus changes and explicit reselection refit while manual zoom survives ordinary redraws', async () => {
@@ -162,7 +169,7 @@ test('focus changes and explicit reselection refit while manual zoom survives or
         near((await inspect(page, 'medium')).scale, .8, 'manual zoom survives redraw', .001);
         await focus(page, 'medium', true);
         await expect.poll(async () => inside(await inspect(page, 'medium'))).toBe(true);
-        centered(await inspect(page, 'medium'));
+        topLeft(await inspect(page, 'medium'));
         await focus(page, 'small');
         near((await inspect(page, 'small')).scale, 1.25, 'changed script fits', .001);
         assert.equal((await inspect(page, 'medium')).hidden, true);
@@ -177,12 +184,12 @@ test('the pane adapter restores a focused script without letting a saved viewpor
         await page.evaluate(() => (globalThis as any).fitFixture.adapterFocus('medium',
             {scale: 1.7, x: -5000, y: -7000, visible: true}));
         await expect.poll(async () => inside(await inspect(page, 'medium'))).toBe(true);
-        centered(await inspect(page, 'medium'));
+        topLeft(await inspect(page, 'medium'));
         await page.evaluate(() => (globalThis as any).fitFixture.manual(.8));
         await page.evaluate(() => (globalThis as any).fitFixture.adapterFocus('medium',
             {scale: 1.7, x: -5000, y: -7000, visible: true}));
         await expect.poll(async () => inside(await inspect(page, 'medium'))).toBe(true);
-        centered(await inspect(page, 'medium'));
+        topLeft(await inspect(page, 'medium'));
         assert.deepEqual((await inspect(page, 'medium')).errors, []);
         assert.deepEqual(errors, []);
     } finally {await page.close();}

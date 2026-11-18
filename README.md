@@ -6,7 +6,7 @@ The code views of TurboWarp Plus Editor: code in tabs and windows that share one
 
 ## Opening a selected script
 
-Opening a function or hat fits its rendered script into the pane with 24px of padding. Automatic zoom stays between 50% and 125%, respecting stricter workspace limits. At the lower limit, the script starts below the top padding so a long script remains readable from its beginning. Ordinary edits and manual zoom do not refit it.
+Opening a function or hat adjusts the zoom to its rendered script and places the first block's top left 24px right and down from the code pane's top left. Automatic zoom stays between 50% and 125%, respecting stricter workspace limits. Short scripts and scripts at the zoom floor start at the same position, regardless of wider blocks farther down the script. Ordinary edits and manual zoom do not refit it.
 
 Hosts with a separate workspace can call `fitScriptInWorkspace(workspace, scriptId, ScratchBlocks)` from the root or `./sprite-code-windows` export. It returns `false` if the viewport or block is not ready, so the host can retry after layout.
 
