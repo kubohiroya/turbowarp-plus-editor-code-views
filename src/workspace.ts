@@ -8,6 +8,7 @@ import type {PresentationElements} from './preview-chrome.ts';
 import {attachScriptView, getDockedScriptLayout, type ScriptView} from './script-layout-view.ts';
 import {attachScriptArrows, registerScriptRelationNavigation} from './script-arrows.ts';
 import type {RelationBlock, ScriptEndpoint} from './script-relations.ts';
+import {fitScriptInWorkspace} from './script-fit.ts';
 
 export type AttachPreviewMinimap = (workspace, ScratchBlocks, watermark: HTMLElement) => {dispose(): void};
 /** Adds the code area's zoom buttons and minimap to another workspace. */
@@ -296,27 +297,16 @@ function attachScriptVisibility({vm, blocks, workspace, homeDocument, onError}) 
     }
 
     /**
-     * Put the shown script at the top left of the view, once the code area has its size there: the view it
-     * moves into may only be laid out after the script was picked.
+     * Fit the shown script once the code area has its size: its destination view may only be laid out
+     * after the script was picked. Later edits and manual zooms keep their viewport.
      */
     let revealPending = false;
     function reveal() {
         if (!revealPending) return;
-        const block = focus && workspace.getBlockById(focus.id);
-        const injection = workspace.getInjectionDiv();
-        if (!block || !injection.clientWidth || !injection.clientHeight) return;
-        // The scroll area follows the shown scripts, which may have changed since the scrollbars were sized.
-        workspace.resize?.();
-        const metrics = workspace.getMetrics?.();
-        if (!metrics?.viewWidth || !metrics.viewHeight) return;
-        revealPending = false;
-        const {x, y} = block.getRelativeToSurfaceXY();
-        const padding = 16;
-        workspace.scrollbar?.set(x * workspace.scale - metrics.contentLeft - padding,
-            y * workspace.scale - metrics.contentTop - padding);
+        if (focus && fitScriptInWorkspace(workspace, focus.id, blocks)) revealPending = false;
     }
 
-    function setFocus(next?: {id: string; onLost?: () => void}) {
+    function setFocus(next?: {id: string; onLost?: () => void}, refit = false) {
         const changedScript = next?.id !== focus?.id;
         focus = next && {id: next.id, onLost: next.onLost, extras: changedScript ? new Set() : focus?.extras ?? new Set()};
         if (focus) {
@@ -337,11 +327,11 @@ function attachScriptVisibility({vm, blocks, workspace, homeDocument, onError}) 
         } else restoreWorkspaceMethods();
         safePaint();
         if (workspace.rendered && workspace.isVisible?.() !== false) workspace.resize?.();
-        if (focus && changedScript) {
+        if (focus && (changedScript || refit)) {
             revealPending = true;
-            reveal();
+            // The pane can still be moving from its previous size during this activation.
             schedulePaint();
-        }
+        } else if (!focus) revealPending = false;
     }
 
     // Blocks dragged in from the palette, or pulled out of the shown script, stay in view. Only the end of a
@@ -387,8 +377,8 @@ function attachScriptVisibility({vm, blocks, workspace, homeDocument, onError}) 
         resized: () => {
             if (!disposed) reveal();
         },
-        focus: (id?: string, onLost?: () => void) => {
-            if (!disposed) setFocus(id ? {id, onLost} : undefined);
+        focus: (id?: string, onLost?: () => void, refit = false) => {
+            if (!disposed) setFocus(id ? {id, onLost} : undefined, refit);
         },
         get focusedScript() { return focus?.id; },
         dispose() {
@@ -664,8 +654,8 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
          * Show only one script in the code area, a hat or a function, or every script again without `id`.
          * `onLost` runs when that script is deleted.
          */
-        focusScript(id?: string, onLost?: () => void) {
-            visibility.focus(id, onLost);
+        focusScript(id?: string, onLost?: () => void, refit = false) {
+            visibility.focus(id, onLost, refit);
         },
         get focusedScript() { return visibility.focusedScript; },
         createFunction(target: CodeTarget & {id: string}, kind: 'procedure' | 'named', name: string, {loadNamedFunctions}: {
@@ -718,10 +708,9 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
             if (session.bridge !== bridge) return;
             // Let a target switch restore that pane's mode first. Normal views keep showing all scripts.
             if (visibility.focusedScript) {
-                visibility.focus(endpoint.scriptId);
+                visibility.focus(endpoint.scriptId, undefined, true);
                 session.changed(endpoint);
-            }
-            workspace.centerOnBlock(endpoint.scriptId);
+            } else workspace.centerOnBlock(endpoint.scriptId);
         });
     });
     visibility.paint();
@@ -885,15 +874,7 @@ function attachProcedureEditor({vm, blocks, workspace, options, onError, homeDoc
     let rendered: string | undefined;
     let positioned = false;
     function position() {
-        const definition = editor.getBlockById(definitionId);
-        const metrics = editor.getMetrics();
-        if (!definition || !metrics?.viewWidth || !metrics.viewHeight) return false;
-        // Put the hat at the top left whatever its place in the code area.
-        const {x, y} = definition.getRelativeToSurfaceXY();
-        const padding = 16;
-        editor.scrollbar.set(x * editor.scale - metrics.contentLeft - padding,
-            y * editor.scale - metrics.contentTop - padding);
-        return true;
+        return fitScriptInWorkspace(editor, definitionId, blocks);
     }
     function load() {
         if (!exists() || !target.blocks._blocks[definitionId]) return;
@@ -939,7 +920,7 @@ function attachProcedureEditor({vm, blocks, workspace, options, onError, homeDoc
             return;
         }
         pendingBlock = undefined;
-        editor.centerOnBlock(block.id);
+        fitScriptInWorkspace(editor, definitionId, blocks);
         block.select();
     }
 

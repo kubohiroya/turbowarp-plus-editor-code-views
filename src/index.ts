@@ -12,6 +12,7 @@ export {attachDockedCodeExtensions} from './code-extensions.ts';
 export type {NativeFieldEditSession} from './native-extension-field.ts';
 export type {FieldActionPanel, ProgrammaticExtensionField} from './programmatic-extension-field.ts';
 export {encodeEdit} from './protocol.ts';
+export {fitScriptInWorkspace} from './script-fit.ts';
 export {readScriptRelations} from './script-relations.ts';
 export type {ScriptEndpoint, ScriptRelation} from './script-relations.ts';
 
