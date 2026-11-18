@@ -525,6 +525,38 @@
     --tw-script-message-stroke: light-dark(#a85a00, #ffbd66);
 }
 
+.tw-workspace-overview {
+    position: absolute;
+    z-index: 1;
+    box-sizing: border-box;
+    overflow: hidden;
+    cursor: pointer;
+    color: var(--text-primary, #334155);
+    background: color-mix(in srgb, var(--ui-primary, white) 50%, transparent);
+    border: 1px solid var(--ui-black-transparent, #cbd5e1);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+}
+.tw-workspace-overview[hidden] { display: none; }
+.tw-workspace-overview-viewport {
+    cursor: grab;
+    fill: currentColor;
+    fill-opacity: .06;
+    stroke: currentColor;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+}
+.tw-workspace-overview[data-dragging], .tw-workspace-overview[data-dragging] .tw-workspace-overview-viewport { cursor: grabbing; }
+[dir] .tw-workspace-overview-watermark[data-plus-workspace-watermark] {
+    inset: auto var(--plus-watermark-right, 1.25rem) var(--plus-watermark-bottom, 1.25rem) auto;
+}
+.tw-workspace-overview-watermark > img {
+    display: block;
+    max-width: var(--plus-watermark-size, 64px);
+    max-height: var(--plus-watermark-size, 64px);
+    opacity: .6;
+}
+
 [data-script-relation="function"] {
     --tw-script-relation-stroke: var(--tw-script-function-stroke);
     --tw-script-relation-dash: none;
@@ -543,7 +575,7 @@
     fill: none;
     stroke: var(--tw-script-relation-stroke);
     stroke-width: 1.8;
-    stroke-opacity: 0.75;
+    stroke-opacity: 0.2;
     vector-effect: non-scaling-stroke;
     pointer-events: none;
 }
@@ -559,6 +591,14 @@
 
 [data-script-dragging] > [data-script-relation]:not([data-highlighted]) :is(.tw-script-relation-line, .tw-script-relation-head) {
     stroke-opacity: 0.2;
+}
+
+[data-script-relation-layer] > [data-script-relation][data-script-external] {
+    opacity: 0.05;
+}
+
+[data-script-relation-layer] > [data-script-relation][data-script-external] :is(.tw-script-relation-line, .tw-script-relation-head) {
+    stroke-opacity: 1;
 }
 
 .tw-script-relation-script-highlight {

@@ -3,7 +3,8 @@ import {paintScripts, readScripts, type LayoutWorkspace} from './script-layout-w
 import {openRearrangement, type RearrangementContext} from './script-layout-dialog.ts';
 import {attachScriptViewMenu, type ScriptViewMenuBlocks, type ScriptViewMenuWorkspace} from './script-view-menu.ts';
 import type {PresentationElements} from './preview-chrome.ts';
-import {attachScriptArrows, type ScriptRelationContext} from './script-arrows.ts';
+import {attachScriptArrows, type ScriptRelationContext, type ScriptRelationVisibility} from './script-arrows.ts';
+import {attachCodeZoomRange} from './code-zoom.ts';
 
 export type ScriptView = 'free' | 'z' | 'n';
 
@@ -30,6 +31,7 @@ export function attachScriptView({
     relations: relationContext
 }: ViewOptions) {
     const injection = workspace.getInjectionDiv();
+    const restoreZoomRange = attachCodeZoomRange(workspace);
     const host = mount ?? injection;
     const document = host.ownerDocument;
     const window = document.defaultView;
@@ -139,6 +141,7 @@ export function attachScriptView({
         get view() { return view; },
         setView,
         dispose() {
+            restoreZoomRange();
             resize.disconnect();
             observer.disconnect();
             language.disconnect();
@@ -164,6 +167,16 @@ interface DockedScriptLayoutOptions {
 }
 
 const dockedViews = new WeakMap<object, ReturnType<typeof attachDockedScriptLayout>>();
+const relationVisibilities = new WeakMap<object, ScriptRelationVisibility>();
+
+export function getDockedRelationVisibility(vm: object): ScriptRelationVisibility {
+    return {...relationVisibilities.get(vm) ?? {function: true, message: true}};
+}
+
+export function setDockedRelationVisibility(vm: object, visibility: ScriptRelationVisibility) {
+    relationVisibilities.set(vm, {...visibility});
+    dockedViews.get(vm)?.view.relations?.setVisibility(visibility);
+}
 
 export function getDockedScriptLayout(vm: object) {
     return dockedViews.get(vm);
@@ -186,7 +199,8 @@ export function attachDockedScriptLayout({vm, workspace, ScratchBlocks, canUse, 
     };
     const view = attachScriptView({workspace, ScratchBlocks, getLocale: () => injection.ownerDocument.documentElement.lang || locale,
         canShowBlock: canArrange, relations: {vm: vm as ScriptRelationContext['vm'],
-            getTarget: () => vm.editingTarget as ReturnType<ScriptRelationContext['getTarget']>}});
+            getTarget: () => vm.editingTarget as ReturnType<ScriptRelationContext['getTarget']>,
+            initialVisibility: getDockedRelationVisibility(vm)}});
     host.setAttribute('data-code-hover-surface', '');
     let dialog: ReturnType<typeof openRearrangement> | undefined;
     const attachment = {

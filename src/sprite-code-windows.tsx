@@ -5,6 +5,7 @@ import {getCodeSession} from './workspace.ts';
 
 export {attachCodeWorkspace} from './workspace.ts';
 export {fitScriptInWorkspace} from './script-fit.ts';
+export {attachWorkspaceOverview} from './workspace-overview.ts';
 export {attachFunctionCallMenu, createCodePaneAdapter, createFunction, mountProcedureEditor, readHatScripts, readSavedCodePane, readScriptRelationGraph} from './code-pane.ts';
 export type {SavedCodePane} from './code-pane.ts';
 
