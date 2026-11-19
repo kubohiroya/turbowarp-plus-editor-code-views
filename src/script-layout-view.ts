@@ -7,6 +7,7 @@ import {attachScriptArrows, type ScriptRelationContext, type ScriptRelationVisib
 import {attachCodeZoomRange} from './code-zoom.ts';
 import {setScriptProjection} from './script-projection.ts';
 import {openSerialScriptEditor} from './serial-script-editor.ts';
+import {openSemanticLayout, type SemanticLayoutContext} from './semantic-layout-dialog.ts';
 import {isFoldedDefinition, setFoldedDefinition} from './procedure-edits.ts';
 
 export type ScriptView = 'free' | 'z' | 'n';
@@ -21,6 +22,7 @@ interface ViewOptions {
     onChange?(view: ScriptView): void;
     hasWorkspaceMenu?(): boolean;
     relations?: ScriptRelationContext;
+    semanticLayout?: Pick<SemanticLayoutContext, 'events' | 'canArrange'>;
 }
 
 const choices = [
@@ -31,7 +33,7 @@ const choices = [
 
 export function attachScriptView({
     workspace, ScratchBlocks, getLocale, mount, initialView = 'free', canShowBlock, onChange, hasWorkspaceMenu = () => true,
-    relations: relationContext
+    relations: relationContext, semanticLayout
 }: ViewOptions) {
     const injection = workspace.getInjectionDiv();
     const restoreZoomRange = attachCodeZoomRange(workspace);
@@ -51,6 +53,7 @@ export function attachScriptView({
     const foldButtons = new Map<string, {button: HTMLButtonElement; top: number}>();
     let view = initialView;
     let editor: ReturnType<typeof openSerialScriptEditor>;
+    let semanticDialog: ReturnType<typeof openSemanticLayout> | undefined;
     let frame: number | undefined;
     const svg = workspace.getParentSvg();
     const observer = new window.MutationObserver(records => {
@@ -134,7 +137,16 @@ export function attachScriptView({
         const ja = japanese();
         return {
             label: ja ? 'コードの並びの見え方を変更する' : 'Change code layout view',
-            options: foldOptions(),
+            options: [...foldOptions(), ...(view === 'free' && semanticLayout && relationContext ? [{
+                text: ja ? 'スクリプトを意味に応じて再配置する' : 'Rearrange scripts by relationships',
+                enabled: semanticLayout.canArrange(),
+                callback() {
+                    if (view !== 'free' || !semanticLayout.canArrange()) return;
+                    semanticDialog?.close();
+                    semanticDialog = openSemanticLayout({workspace, relations: relationContext, ...semanticLayout,
+                        canArrange: () => view === 'free' && semanticLayout.canArrange()}, getLocale());
+                }
+            }] : [])],
             choices: choices.map(choice => ({
                 text: ja ? choice.jaLabel : choice.label,
                 enabled: true,
@@ -246,6 +258,7 @@ export function attachScriptView({
         get view() { return view; },
         setView,
         dispose() {
+            semanticDialog?.close();
             editor?.dispose();
             setScriptProjection(workspace);
             restoreZoomRange();
@@ -307,7 +320,8 @@ export function attachDockedScriptLayout({vm, workspace, ScratchBlocks, canUse, 
             (!group || group.classList.contains('dv-active-group')));
     };
     const view = attachScriptView({workspace, ScratchBlocks, getLocale: () => injection.ownerDocument.documentElement.lang || locale,
-        canShowBlock: canArrange, relations: {vm: vm as ScriptRelationContext['vm'],
+        canShowBlock: canArrange, semanticLayout: {events: ScratchBlocks.Events, canArrange},
+        relations: {vm: vm as ScriptRelationContext['vm'],
             getTarget: () => vm.editingTarget as ReturnType<ScriptRelationContext['getTarget']>,
             initialVisibility: getDockedRelationVisibility(vm)}});
     host.setAttribute('data-code-hover-surface', '');

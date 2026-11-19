@@ -74,6 +74,8 @@ export function startCodePopout({ScratchBlocks, PopupLayout, attachWorkspaceNavi
     let edits = [];
     const scriptView = attachScriptView({workspace, ScratchBlocks, getLocale: () => locale,
         mount: workspaceArea, canShowBlock: () => editable && !blockedSnapshot,
+        semanticLayout: {events: ScratchBlocks.Events, canArrange: () =>
+            editable && !blockedSnapshot && document.hasFocus() && !mount.inert && !workspace.isDragging()},
         hasWorkspaceMenu: () => !mount.inert,
         relations: {
             getTarget: () => targetId ? {id: targetId, blocks: {_blocks: history.blocks}} : undefined,
