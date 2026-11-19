@@ -340,12 +340,11 @@ test('function and message arrows use distinct shared styles behind the blocks w
     await page.close();
 });
 
-test('message destinations in other sprites are accessible and send-and-wait keeps its own mark', async () => {
+test('message destinations in other sprites remain accessible without hourglass icons', async () => {
     const {page, errors} = await open();
     const waiting = page.locator('[data-script-relation="message"][data-source-call="wait"]');
     const sending = page.locator('[data-script-relation="message"][data-source-call="send"]');
-    assert.equal(await waiting.locator('.tw-script-relation-wait').count(), 2,
-        'the same wait mark appears on local and remote receiver edges');
+    assert.equal(await waiting.locator('.tw-script-relation-wait').count(), 0);
     assert.equal(await sending.locator('.tw-script-relation-wait').count(), 0);
     const paint = () => waiting.evaluateAll(groups => groups.map(group => ({
         external: group.hasAttribute('data-script-external'), opacity: getComputedStyle(group.querySelector('.tw-script-relation-line')).opacity,
@@ -369,83 +368,33 @@ test('message destinations in other sprites are accessible and send-and-wait kee
     await page.close();
 });
 
-test('send-and-wait scales its vector badge with the workspace and keeps its explanatory tooltip', async () => {
+test('message dash styles replace hourglasses in free, serial, folded and preview code views', async () => {
     const {page, errors} = await open();
     await page.evaluate(() => (globalThis as any).fixture.attachLayout());
-    const badge = page.locator('[data-source-call="wait"][data-destination-block="receive"] .tw-script-relation-wait');
-    await badge.waitFor();
-    const inspect = () => badge.evaluate(group => {
-        const rect = group.querySelector('rect').getBoundingClientRect();
-        const path = group.parentElement.querySelector<SVGPathElement>('.tw-script-relation-line');
-        const matrix = path.getScreenCTM();
-        const point = (distance: number) => {
-            const local = path.getPointAtLength(distance);
-            return {x: matrix.a * local.x + matrix.c * local.y + matrix.e,
-                y: matrix.b * local.x + matrix.d * local.y + matrix.f};
-        };
-        const samples = Array.from({length: 101}, (_, index) => point(path.getTotalLength() * index / 100));
-        const x = rect.left + rect.width / 2;
-        const y = rect.top + rect.height / 2;
-        return {width: rect.width, height: rect.height, title: group.querySelector('title').textContent,
-            glyph: group.querySelector('.tw-script-relation-wait-glyph')?.getAttribute('d'),
-            text: group.querySelector('text')?.textContent,
-            overlaps: samples.some(point => point.x >= rect.left - 1 && point.x <= rect.right + 1 &&
-                point.y >= rect.top - 1 && point.y <= rect.bottom + 1),
-            hit: document.elementFromPoint(x, y)?.closest('.tw-script-relation-wait') === group};
+    for (const layout of ['free', 'z', 'n']) {
+        await page.evaluate(value => (globalThis as any).fixture.layout(value), layout);
+        for (const scale of [1, .2, 1.5]) {
+            await page.evaluate(value => (globalThis as any).fixture.zoom(value), scale);
+            const styles = await relation(page, 'message').evaluateAll(groups => groups.map(group => ({
+                wait: group.getAttribute('data-wait'),
+                dash: getComputedStyle(group.querySelector('.tw-script-relation-line')).strokeDasharray
+                    .split(/[ ,]+/).map(parseFloat)
+            })));
+            assert.ok(styles.length > 0);
+            for (const style of styles) assert.deepEqual(style.dash, style.wait === 'true' ? [7, 5] : [3.5, 2.5]);
+            assert.equal(await page.locator('.tw-script-relation-wait').count(), 0);
+        }
+    }
+    await page.evaluate(async () => {
+        await (globalThis as any).fixture.layout('free');
+        await (globalThis as any).fixture.fold('start', true);
+        await (globalThis as any).fixture.project('z');
     });
-    let result = await inspect();
-    assert.ok(Math.abs(result.width - 20) < .1 && Math.abs(result.height - 20) < .1);
-    assert.equal(result.title, 'Send and wait');
-    assert.equal(result.glyph, 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12');
-    assert.equal(result.text, undefined, 'the mark does not depend on emoji fonts');
-    assert.equal(result.overlaps, false, 'the line never runs through the badge');
-    assert.equal(result.hit, true, 'pointer hit testing can reach the SVG title');
-    await badge.hover();
-    for (const scale of [.6, .2, .02, 1.5, 1]) {
-        await page.evaluate(value => (globalThis as any).fixture.zoom(value), scale);
-        result = await inspect();
-        assert.ok(Math.abs(result.width - 20 * scale) < .01 && Math.abs(result.height - 20 * scale) < .01,
-            `the badge follows workspace scale ${scale}: ${result.width} × ${result.height}`);
-        if (scale >= .2) assert.equal(result.overlaps, false);
-    }
-    assert.deepEqual(errors, []);
-    await page.close();
-});
-
-test('wait badges stay opaque on local and external arrows through zoom, scroll and highlighting', async () => {
-    const {page, errors} = await open();
-    await page.evaluate(() => (globalThis as any).fixture.attachLayout());
-    const badges = page.locator('[data-source-call="wait"] .tw-script-relation-wait');
-    const inspect = () => badges.evaluateAll(groups => groups.map(group => {
-        let opacity = 1;
-        for (let node: Element | null = group; node; node = node.parentElement) {
-            opacity *= Number(getComputedStyle(node).opacity);
-        }
-        const glyph = getComputedStyle(group.querySelector('.tw-script-relation-wait-glyph'));
-        const rect = group.querySelector('rect').getBoundingClientRect();
-        return {opacity, stroke: glyph.strokeOpacity, width: rect.width};
-    }));
-    const check = async (scale: number) => {
-        const states = await inspect();
-        assert.equal(states.length, 2);
-        for (const state of states) {
-            assert.equal(state.opacity, 1, 'the external line opacity must not fade the wait badge');
-            assert.equal(state.stroke, '1');
-            assert.ok(Math.abs(state.width - 20 * scale) < .01);
-        }
-    };
-    await check(1);
-    await activateScript(page, 'start');
-    await check(1);
-    for (const scale of [.2, .02, .6, 1.5, 1]) {
-        await page.evaluate(value => (globalThis as any).fixture.zoom(value), scale);
-        await check(scale);
-        await page.evaluate(() => (globalThis as any).fixture.scroll(120, 40));
-        await check(scale);
-    }
-    await page.evaluate(() => (globalThis as any).fixture.switchToSecondary());
-    assert.equal(await badges.count(), 1, 'also cover the incoming external arrow');
-    assert.equal((await inspect())[0].opacity, 1);
+    const preview = page.locator('[data-arrow-test-projection]');
+    assert.equal(await preview.locator('.tw-script-relation-wait').count(), 0);
+    assert.ok(await preview.locator('[data-script-relation="message"][data-wait="true"]').count() > 0);
+    assert.ok(await preview.locator('[data-script-relation="message"][data-wait="false"]').count() > 0);
+    assert.equal(await page.locator('[data-script-relation-guide]').evaluateAll(nodes => nodes.some(node => node.textContent.includes('⏳'))), false);
     assert.deepEqual(errors, []);
     await page.close();
 });

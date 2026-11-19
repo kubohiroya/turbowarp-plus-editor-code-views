@@ -24,15 +24,15 @@ type Point = {x: number; y: number};
 type Box = Point & {width: number; height: number};
 type Anchor = {id: string; box: Box; point(side: 'left' | 'right', fraction: number): Point};
 type Drawing = {relation: ScriptRelation; source?: Anchor; destination?: Anchor; count: number;
-    serialRoute?: {right: number; top: number; clearance: number}};
+    serialRoute?: {right: number; top: number; clearance: number; radius: number}};
 
-function roundedRoute(points: Point[], radius: number) {
+function roundedRoute(points: Point[], radii: readonly number[]) {
     let path = `M ${points[0].x} ${points[0].y}`;
     for (let index = 1; index < points.length - 1; index++) {
         const before = points[index - 1], corner = points[index], after = points[index + 1];
         const entering = Math.hypot(corner.x - before.x, corner.y - before.y);
         const leaving = Math.hypot(after.x - corner.x, after.y - corner.y);
-        const size = Math.min(radius, entering / 2, leaving / 2);
+        const size = Math.min(radii[index - 1], entering / 2, leaving / 2);
         if (!size) {path += ` L ${corner.x} ${corner.y}`; continue;}
         const first = {x: corner.x + (before.x - corner.x) * size / entering,
             y: corner.y + (before.y - corner.y) * size / entering};
@@ -44,23 +44,6 @@ function roundedRoute(points: Point[], radius: number) {
     return `${path} L ${end.x} ${end.y}`;
 }
 const ns = 'http://www.w3.org/2000/svg';
-// Keep the same sixteen-unit hourglass as the call graph's relation badge.
-const relationWaitGlyph = 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12';
-
-/** Keep the badge beside the receiving end of the path, leaving its stroke visible. */
-function waitBadgePoint(path: string, offset: number): Point {
-    const values = path.match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
-    const [sx, sy] = values;
-    const [bx, by, tx, ty] = values.slice(-4);
-    const endX = tx - bx;
-    const endY = ty - by;
-    const dx = endX || endY ? endX : tx - sx;
-    const dy = endX || endY ? endY : ty - sy;
-    const length = Math.hypot(dx, dy) || 1;
-    const side = -dy < 0 || dy === 0 && dx > 0 ? -1 : 1;
-    return {x: tx - dx / length * offset * .75 - dy / length * offset * side,
-        y: ty - dy / length * offset * .75 + dx / length * offset * side};
-}
 type Outline = {points: (Point & {distance: number})[]; cuts: Map<string, Point>};
 const outlines = new Map<string, Outline>();
 
@@ -306,26 +289,20 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             badgePoint = {x: middle, y: top - 6};
         }
         if (serialRoute && source && destination) {
-            const {right, top, clearance} = serialRoute;
+            const {right, top, clearance, radius} = serialRoute;
             // Leave room beside every script before turning vertically, then return through the gap above the hat.
             const approach = end.x - clearance;
             path = roundedRoute([start, {x: right, y: start.y}, {x: right, y: top},
-                {x: approach, y: top}, {x: approach, y: end.y}, end], clearance);
+                {x: approach, y: top}, {x: approach, y: end.y}, end], [radius, radius, clearance, clearance]);
             badgePoint = {x: right, y: (start.y + top) / 2};
         }
         const head = `M ${end.x - 9} ${end.y - 5} L ${end.x} ${end.y} L ${end.x - 9} ${end.y + 5}`;
-        let waitTransform: string | undefined;
-        if (relation.kind === 'message' && relation.wait) {
-            const point = waitBadgePoint(path, 24);
-            badgePoint = {x: point.x + 16, y: point.y + 4};
-            waitTransform = `translate(${point.x} ${point.y})`;
-        }
-        return {path, head, recursive, badgePoint, waitTransform};
+        return {path, head, recursive, badgePoint};
     }
 
     function drawArrow(drawing: Drawing, matrix: DOMMatrix, inverse: DOMMatrix, area: DOMRect, highlighted: boolean) {
         const {relation, source, destination, count} = drawing;
-        const {path, head, recursive, badgePoint, waitTransform} = arrowGeometry(drawing, matrix, inverse, area, highlighted);
+        const {path, head, recursive, badgePoint} = arrowGeometry(drawing, matrix, inverse, area, highlighted);
         const strings = text();
         const group = element('g', {
             'data-script-relation': relation.kind,
@@ -348,18 +325,9 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             class: 'tw-script-relation-head',
             d: head
         }));
-        if (waiting) {
-            const badge = element('g', {class: 'tw-script-relation-wait', 'aria-label': strings.wait,
-                transform: waitTransform});
-            const title = element('title');
-            title.textContent = strings.wait;
-            badge.append(title, element('rect', {x: '-10', y: '-10', width: '20', height: '20', rx: '4'}),
-                element('path', {class: 'tw-script-relation-wait-glyph', d: relationWaitGlyph, transform: 'translate(-8 -8)'}));
-            group.append(badge);
-        }
         if (count > 1) {
             const badge = element('text', {x: String(badgePoint.x), y: String(badgePoint.y),
-                class: 'tw-script-relation-badge', 'text-anchor': waiting ? 'start' : 'middle'});
+                class: 'tw-script-relation-badge', 'text-anchor': 'middle'});
             badge.textContent = `×${count}`;
             group.append(badge);
         }
@@ -414,7 +382,6 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 };
                 set(group.querySelector('.tw-script-relation-line'), 'd', shape.path);
                 set(group.querySelector('.tw-script-relation-head'), 'd', shape.head);
-                if (shape.waitTransform) set(group.querySelector('.tw-script-relation-wait'), 'transform', shape.waitTransform);
                 const count = group.querySelector('.tw-script-relation-badge');
                 set(count, 'x', shape.badgePoint.x); set(count, 'y', shape.badgePoint.y);
             }
@@ -482,7 +449,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 const destination = scripts.get(drawing.relation.destination.scriptId);
                 if (!destination) continue;
                 drawing.serialRoute = {right: rightEdge + (96 + lane * 16) * unit,
-                    top: destination.y - (14 + lane % 4 * 6) * unit, clearance: 8 * unit};
+                    top: destination.y - (14 + lane % 4 * 6) * unit, clearance: 8 * unit, radius: 48 * unit};
                 lane++;
             }
             // Reserve actual scrollable SVG width for the right-hand routes while preserving the block scale.
@@ -535,7 +502,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                     vm?.runtime?.targets?.find(item => item.id === endpoint.targetId)?.getName?.());
                 const reason = relation.unresolved && strings[relation.unresolved];
                 external.textContent = `${name ? `${name} · ` : ''}` +
-                    `${relation.label}${reason ? ` · ${reason}` : ''}${relation.kind === 'message' && relation.wait ? ' ⏳' : ''}${count > 1 ? ` ×${count}` : ''}`;
+                    `${relation.label}${reason ? ` · ${reason}` : ''}${count > 1 ? ` ×${count}` : ''}`;
                 external.disabled = !endpoint;
                 external.setAttribute('aria-label', `${strings[relation.kind]}: ${external.textContent}`);
                 external.toggleAttribute('data-highlighted', Boolean(highlighted));

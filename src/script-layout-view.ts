@@ -165,7 +165,8 @@ export function attachScriptView({
                 width: box.width, height: box.height};
         });
         const placements = arrangeScripts(scripts, view, 'vertical', Math.max(64, 48 / scale))
-            .map(placement => ({...placement, x: Math.max(placement.x, 32 / scale)}));
+            // Leave room for incoming arrowheads and return paths beside the fixed fold gutter.
+            .map(placement => ({...placement, x: placement.x + 40 / scale}));
         paintScripts(contents, placements, scale);
         paintFoldButtons(placements, scale);
         const projection = contents.querySelector('svg');
