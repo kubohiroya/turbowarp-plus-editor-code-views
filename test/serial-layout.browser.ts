@@ -30,6 +30,30 @@ const open = async (layout: 'z' | 'n', locale = 'en') => {
 };
 
 for (const layout of ['z', 'n'] as const) {
+    test(`${layout}: incoming arrows fit between the fold gutter and the scripts at every zoom`, async () => {
+        const {page, errors} = await open(layout);
+        try {
+            const before = await page.evaluate(() => (globalThis as any).fixture.locations());
+            for (const scale of [1, .2, 2]) {
+                await page.evaluate(async scale => {await (globalThis as any).fixture.zoom(scale);}, scale);
+                const bounds = await page.evaluate(() => {
+                    const gutter = document.querySelector('.tw-script-fold-gutter').getBoundingClientRect();
+                    const surface = document.querySelector('.tw-script-view-surface');
+                    const groups = [...surface.querySelectorAll('[data-script-relation-layer] > [data-script-relation]:not([data-script-external])')];
+                    return {gutterRight: gutter.right,
+                        lines: groups.map(group => group.querySelector('.tw-script-relation-line').getBoundingClientRect().left),
+                        heads: groups.map(group => group.querySelector('.tw-script-relation-head').getBoundingClientRect().left)};
+                });
+                assert.ok(bounds.lines.length > 0);
+                for (const left of [...bounds.lines, ...bounds.heads]) {
+                    assert.ok(left >= bounds.gutterRight + 4, `incoming geometry clipped at zoom ${scale}: ${left} < ${bounds.gutterRight + 4}`);
+                }
+            }
+            assert.deepEqual(await page.evaluate(() => (globalThis as any).fixture.locations()), before);
+            assert.deepEqual(errors, []);
+        } finally {await page.close();}
+    });
+
     test(`${layout}: local arrows use separate routes beyond the right edge of every script`, async () => {
         const {page, errors} = await open(layout);
         try {
@@ -60,6 +84,16 @@ for (const layout of ['z', 'n'] as const) {
                     assert.equal(route.leavesRight, true);
                     assert.equal(route.entersRight, true);
                 }
+                const bend = await page.locator('.tw-script-view-surface [data-source-call="call-1"] .tw-script-relation-line')
+                    .evaluate(line => {
+                        const commands = line.getAttribute('d').match(/[MLQ][^MLQ]*/g);
+                        const turn = commands.findIndex(command => command.startsWith('Q'));
+                        const numbers = command => command.slice(1).trim().split(/[ ,]+/).map(Number);
+                        const before = numbers(commands[turn - 1]), corner = numbers(commands[turn]);
+                        const matrix = (line as SVGPathElement).getScreenCTM();
+                        return Math.abs(corner[0] - before[0]) * Math.hypot(matrix.a, matrix.b);
+                    });
+                assert.ok(bend >= (scale === 1 ? 40 : 16), `right-hand bend must remain easy to follow at ${scale}: ${bend}px`);
             }
             assert.deepEqual(errors, []);
         } finally {await page.close();}

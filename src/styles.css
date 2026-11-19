@@ -567,6 +567,10 @@
     --tw-script-relation-dash: 7 5;
 }
 
+[data-script-relation="message"][data-wait="false"] {
+    --tw-script-relation-dash: 3.5 2.5;
+}
+
 [data-script-relation-layer] {
     pointer-events: none;
 }
@@ -593,7 +597,7 @@
     stroke-opacity: 0.2;
 }
 
-/* Fade external connections without reducing the wait icon's opacity. */
+/* Keep external connections faint, including during highlighting. */
 [data-script-relation-layer] > [data-script-relation][data-script-external] >
     :is(.tw-script-relation-line, .tw-script-relation-head, .tw-script-relation-badge) {
     opacity: 0.05;
@@ -632,24 +636,6 @@
     paint-order: stroke;
     font: 12px sans-serif;
     pointer-events: none;
-}
-
-.tw-script-relation-wait {
-    pointer-events: visiblePainted;
-}
-
-.tw-script-relation-wait rect {
-    fill: var(--ui-primary, Canvas);
-    stroke: var(--tw-script-relation-stroke);
-    stroke-width: 1;
-}
-
-.tw-script-relation-wait .tw-script-relation-wait-glyph {
-    fill: none;
-    stroke: var(--tw-script-relation-stroke);
-    stroke-width: 1.4;
-    stroke-linecap: round;
-    stroke-linejoin: round;
 }
 
 .tw-script-relation-guide {
