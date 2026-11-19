@@ -189,6 +189,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         const capture = {capture: true, signal: events.signal};
         const original = {
             dispose: toolbox.dispose,
+            setVisible: workspace.setVisible,
             getClientRect: toolbox.getClientRect,
             getHeight: toolbox.getHeight,
             getWidth: toolbox.getWidth,
@@ -209,6 +210,18 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         let scrollBeforeSearch = 0;
         const scrollPositions = new Map();
         const verticalPosition = workspace.toolboxPosition;
+        // Scratch Blocks shows a workspace by setting its toolbox to display:block, overriding the
+        // horizontal palette's flex layout. Let the stylesheet lay it out, then refresh its metrics.
+        const restoreHorizontalDisplay = () => {
+            if (!horizontal || menu.style.display !== 'block') return false;
+            menu.style.removeProperty('display');
+            return true;
+        };
+        const setVisible = workspace.setVisible = function (...args) {
+            const result = original.setVisible.apply(this, args);
+            if (restoreHorizontalDisplay()) workspace.resize();
+            return result;
+        };
         const categoryById = id => toolbox.categoryMenu_.categories_.find(category => category.id_ === id);
         const getLocale = () => ScratchBlocks.ScratchMsgs.currentLocale_ || doc.documentElement.lang;
         // A category nested in another opens from its group's child palette.
@@ -597,6 +610,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             workspace.toolboxPosition = horizontal ? ScratchBlocks.TOOLBOX_AT_TOP : verticalPosition;
             menu.classList.toggle(styles.horizontal, horizontal);
             menu.toggleAttribute('data-horizontal-block-palette', horizontal);
+            restoreHorizontalDisplay();
             panel.classList.toggle(styles.panel, horizontal);
             scrollbar.classList.toggle(styles.scrollbar, horizontal);
             if (horizontal) body.setAttribute('transform', `translate(0 ${paletteSearchHeight}) ${bodyTransform ?? ''}`);
@@ -713,6 +727,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             }
         });
         toolbox.dispose = () => {
+            if (workspace.setVisible === setVisible) workspace.setVisible = original.setVisible;
             paletteRefreshers.delete(redraw);
             newSpritePrompts.splice(newSpritePrompts.indexOf(askNewSprite) >>> 0, 1);
             paletteMenu.dispose();
