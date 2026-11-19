@@ -10,6 +10,16 @@ Opening a function or hat adjusts the zoom to its rendered script and places the
 
 Hosts with a separate workspace can call `fitScriptInWorkspace(workspace, scriptId, ScratchBlocks)` from the root or `./sprite-code-windows` export. It returns `false` if the viewport or block is not ready, so the host can retry after layout.
 
+## Rearranging scripts by relationships (Editor #727)
+
+Right-click a free-layout background and choose **Rearrange scripts by relationships**. Preview the current sprite or stage, then confirm or cancel. One Undo/Redo restores the positions and attached comments. Other targets stay fixed. Editable popouts use their existing edit lease; read-only and serial views cannot run this operation.
+
+The existing static relationship extractor supplies function calls, named functions and messages. An iterative SCC pass groups cycles; longest-path ranks and four barycentric sweeps arrange the resulting DAG. Disconnected components occupy separate bands. These bounded, testable rank constraints do not require an additional ELK dependency. Matter.js 0.20.0 (MIT) relaxes comment-inclusive rectangles with gravity and rotation disabled. Fixed steps and canonical ID order make repeated layouts stable. Simulation yields every eight steps and stops on convergence or after 120 steps. Deterministic packing and final collision checks preserve ranks and avoid loose comments. Limits are 1000 scripts, 10000 relations and 1000 loose comments; unsupported input leaves the project unchanged.
+
+External and unresolved links are identified in the preview. Dynamic names do not acquire invented destinations; static relationships do not guarantee execution order. Program, target or geometry changes invalidate the preview. Recalculate before applying. Native block moves own attached-comment undo; comment notifications still reach the VM and popout protocol. Failed queued moves are rolled back before dispatch.
+
+Existing `attachDockedScriptLayout` integration enables the menu without GUI changes. Custom editable `attachScriptView` hosts pass `semanticLayout: {events, canArrange}` alongside `relations`; read-only hosts omit it. Run `npm run build`, the semantic-layout and relationship unit tests, and `node --test test/semantic-layout.browser.ts` for focused headless verification. Roll back the package and host dependency pin together. No project-format migration or new metadata is needed.
+
 ## Entry points
 
 | Import | Contents |

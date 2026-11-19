@@ -124,7 +124,7 @@ for (const layout of ['z', 'n'] as const) {
             });
             await page.locator('.tw-script-view-surface').evaluate(surface => surface.scrollTo(100, 140));
             await expect.poll(() => page.locator('.tw-script-view-surface').evaluate(surface => surface.scrollLeft)).toBeGreaterThan(0);
-            const positions = await page.locator('.tw-script-fold-gutter').evaluate(gutter => {
+            const readPositions = () => page.locator('.tw-script-fold-gutter').evaluate(gutter => {
                 const surface = gutter.parentElement.querySelector('.tw-script-view-surface').getBoundingClientRect();
                 return [...gutter.querySelectorAll<HTMLElement>('[data-script-fold-toggle]')].map(button => {
                     const rect = button.getBoundingClientRect();
@@ -133,6 +133,11 @@ for (const layout of ['z', 'n'] as const) {
                     return {deltaY: rect.top - root.top, deltaX: rect.left - surface.left};
                 });
             });
+            // Scroll coordinates change before the scroll handler aligns the pinned gutter.
+            await expect.poll(async () => (await readPositions()).map(position =>
+                Math.abs(position.deltaY) < 1.1 && Math.abs(position.deltaX - 2) < 1.1
+            )).toEqual([true, true, true, true]);
+            const positions = await readPositions();
             assert.equal(positions.length, 4);
             positions.forEach(position => {
                 assert.ok(Math.abs(position.deltaY) < 1.1, `vertical alignment ${position.deltaY}`);
