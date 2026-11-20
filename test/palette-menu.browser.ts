@@ -15,12 +15,13 @@ after(async () => {
     await server?.close();
 });
 
-const open = async (horizontal = true) => {
+const open = async (horizontal = true, showPaletteMenu = true) => {
     const page = await browser.newPage({viewport: {width: 900, height: 600}});
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(server.url);
-    await page.evaluate(horizontal => (globalThis as any).setup(horizontal), horizontal);
+    await page.evaluate(({horizontal, showPaletteMenu}) => (globalThis as any).setup(horizontal, showPaletteMenu),
+        {horizontal, showPaletteMenu});
     return {page, errors};
 };
 const showWorkspace = (page: Page, visible: boolean) => page.evaluate(visible => {
@@ -88,6 +89,24 @@ test('disposing the workspace removes its visibility wrapper', async () => {
         host.workspace.dispose();
         return host.workspace.setVisible === originalSetVisible;
     }), true);
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('a host can hide the palette menu while categories and layout switching still work', async () => {
+    const {page, errors} = await open(false, false);
+    const toolbox = page.locator('.blocklyToolboxDiv');
+    const button = page.getByRole('button', {name: 'Palette menu'});
+    await expect(toolbox).toBeVisible();
+    await expect(button).toHaveCount(0);
+    await page.evaluate(() => (globalThis as any).palette.setHorizontal(true));
+    await expect(toolbox).toHaveAttribute('data-horizontal-block-palette', '');
+    await toolbox.locator('.scratchCategoryId-motion').click();
+    await expect(page.locator('.blocklyFlyout')).toBeVisible();
+    await showWorkspace(page, false);
+    await showWorkspace(page, true);
+    await expect(button).toHaveCount(0);
+    await page.evaluate(() => (globalThis as any).palette.host.workspace.dispose());
     assert.deepEqual(errors, []);
     await page.close();
 });

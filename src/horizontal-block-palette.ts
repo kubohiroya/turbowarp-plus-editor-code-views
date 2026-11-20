@@ -13,10 +13,12 @@ import {attachPaletteCategoryGroups, hasCategoryGroups} from
     './palette-category-groups.js';
 
 /** Each editor host has its own palette state and lifecycle. */
-export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLibrary: openHostLibrary, styles}: {
+export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLibrary: openHostLibrary, styles, showPaletteMenu = true}: {
     getScratchBlocks(): {getMainWorkspace?(): object} | undefined;
     openExtensionLibrary(document: Document): void;
     styles: Record<string, string>;
+    /** Whether this host offers the palette settings and extension menu. */
+    showPaletteMenu?: boolean;
 }) {
     const installed = new WeakSet();
     const closeOnDragExit = new WeakMap();
@@ -484,10 +486,10 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         const askNewSprite = (target: any) => openGroupSettings(target, true);
         newSpritePrompts.push(askNewSprite);
         const openExtensionLibrary = () => openHostLibrary(doc);
-        const paletteMenu = attachPaletteMenuButton(menu, getLocale, locale => [
+        const paletteMenu = showPaletteMenu ? attachPaletteMenuButton(menu, getLocale, locale => [
             {label: paletteVisibilityMenuLabel(locale), onSelect: () => openGroupSettings()},
             {label: /^ja(?:-|$)/i.test(locale) ? '機能拡張を追加' : 'Add Extension', separated: true, onSelect: openExtensionLibrary}
-        ]);
+        ]) : undefined;
 
         // The GUI selects an extension by its ID once it is added; one shown as a group selects its first shown group.
         const selectCategoryById = toolbox.setSelectedCategoryById;
@@ -506,7 +508,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             } else {
                 original.populate.call(toolbox, tree);
             }
-            paletteMenu.update();
+            paletteMenu?.update();
             if (!horizontal) return;
             const category = categoryById(openId);
             if (category) toolbox.setSelectedItem(category, false);
@@ -730,7 +732,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             if (workspace.setVisible === setVisible) workspace.setVisible = original.setVisible;
             paletteRefreshers.delete(redraw);
             newSpritePrompts.splice(newSpritePrompts.indexOf(askNewSprite) >>> 0, 1);
-            paletteMenu.dispose();
+            paletteMenu?.dispose();
             groups.dispose();
             disconnectPalette();
             if (inputDocument !== doc) moveBlockWidgets(ScratchBlocks, doc);

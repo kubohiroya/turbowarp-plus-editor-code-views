@@ -57,6 +57,8 @@ Matter.js 0.20.0（MIT）で、重力と回転を無効にしたコメント込�
 
 ### ホストが渡すもの
 
+`createHorizontalBlockPalette` の `showPaletteMenu` は既定で `true`。ホストが `false` を渡すと、パレット末尾の▼とそのメニューを作らない。カテゴリの選択・並べ替え・縦横配置の切り替えは引き続き使える。
+
 `attachCodeWorkspace` と `attachDockedScriptLayout` は `presentationElements(injection)` を受け取る。これはワークスペースのまわりのホストの要素（`wrapper`・`extensionButton`・`watermark`）を返す。ドックしたスクリプトの整列は、透かしに `data-code-watermark`、拡張ボタンに `data-code-extension-button` の印を付け、スタイルシートはこの印で、ホバーで出す面と非アクティブな分割表示の中でそれらを隠す。
 
 ### 保存するコードエリア

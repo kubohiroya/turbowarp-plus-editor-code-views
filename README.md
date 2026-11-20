@@ -57,6 +57,8 @@ The code pane adapter (`createCodePaneAdapter`) has `serialize(pane, presentatio
 
 React 16.14 or later is supported, because the Editor mounts these views in the GUI's React 16.
 
+`createHorizontalBlockPalette` accepts `showPaletteMenu` (default `true`). Passing `false` omits the trailing ▼ button and its menu while keeping category selection, reordering, and horizontal/vertical layout switching available.
+
 ## Verification
 
 Run `npm test` to build the package, run the unit tests, and check that the sources use no React API newer than 16.14.
