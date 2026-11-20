@@ -5,14 +5,14 @@ import {createHorizontalBlockPalette} from '../../dist/horizontal-block-palette.
 declare const EditorRuntime: any;
 declare const Blockly: any;
 
-(globalThis as any).setup = async (horizontal = true) => {
+(globalThis as any).setup = async (horizontal = true, showPaletteMenu = true) => {
     const style = document.createElement('style');
     style.textContent = styles + horizontalStyles.replace(/:global\(([^)]+)\)/g, '$1');
     document.head.append(style);
     const palette = createHorizontalBlockPalette({
         getScratchBlocks: () => Blockly,
         openExtensionLibrary() {},
-        styles: {horizontal: 'horizontal', panel: 'panel', scrollbar: 'scrollbar'}
+        styles: {horizontal: 'horizontal', panel: 'panel', scrollbar: 'scrollbar'}, showPaletteMenu
     });
     palette.installHorizontalBlockPalette(Blockly);
     palette.setHorizontalBlockPalette(horizontal);
