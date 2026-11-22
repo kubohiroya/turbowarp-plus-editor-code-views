@@ -44,6 +44,8 @@ const endDrag = async (page: Page) => {
     // Clear Blockly's ordinary selection after ending the drag, so contextual emphasis can disappear.
     await page.mouse.click(1100, 700);
     await page.waitForFunction(() => !document.querySelector('[data-script-relation-drag-source], [data-script-relation-related]'));
+    // The marks go on mouseup; the click's deselection reaches the edges in a later frame.
+    await page.evaluate(() => (globalThis as any).fixture.settle());
 };
 const markedScripts = (page: Page) => page.locator('[data-script-relation-related]')
     .evaluateAll(roots => roots.map(root => root.getAttribute('data-id')).sort());
