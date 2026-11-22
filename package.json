@@ -102,6 +102,10 @@
       "types": "./dist/dockview-unsaved.d.ts",
       "default": "./dist/dockview-unsaved.js"
     },
+    "./script-selection": {
+      "types": "./dist/script-selection.d.ts",
+      "default": "./dist/script-selection.js"
+    },
     "./styles.css": "./src/styles.css",
     "./package.json": "./package.json",
     "./horizontal-block-palette": {
