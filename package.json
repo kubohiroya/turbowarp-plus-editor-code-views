@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-plus-editor-code-views",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Code views for TurboWarp Plus Editor: code in tabs and windows, the detached block palette, script layout and block field editing",
   "type": "module",
   "license": "MPL-2.0",
@@ -155,7 +155,7 @@
   },
   "devDependencies": {
     "@kubohiroya/turbowarp-extension-security-dialog": "0.13.0",
-    "@kubohiroya/turbowarp-plus-editor-test-runtime": "0.3.0",
+    "@kubohiroya/turbowarp-plus-editor-test-runtime": "0.3.2",
     "@kubohiroya/turbowarp-plus-editor-windows": "0.2.1",
     "@playwright/test": "1.64.1",
     "@types/matter-js": "0.20.2",
