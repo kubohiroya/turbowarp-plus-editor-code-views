@@ -1352,3 +1352,18 @@
 .tw-palette-group-item[data-palette-group-pinned] {
     position: relative;
 }
+
+/* Scripts selected together in the free layout (script-selection.ts). */
+.blocklyBlockCanvas .tw-plus-script-selected {
+    filter: drop-shadow(0 0 1.5px var(--tw-plus-script-selection, #4c97ff))
+        drop-shadow(0 0 3px var(--tw-plus-script-selection, #4c97ff));
+}
+
+.tw-plus-script-marquee {
+    position: absolute;
+    z-index: 30;
+    box-sizing: border-box;
+    border: 1px solid var(--tw-plus-script-selection, #4c97ff);
+    background: color-mix(in srgb, var(--tw-plus-script-selection, #4c97ff) 14%, transparent);
+    pointer-events: none;
+}

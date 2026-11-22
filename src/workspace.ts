@@ -1,4 +1,5 @@
 import {attachBlockDrag} from './block-drag.ts';
+import {attachScriptSelection} from './script-selection.ts';
 import {registerCodeWorkspace} from './code-workspace-registry.ts';
 import {workspaceXML, type CodeTarget} from './history.ts';
 import {isFoldedDefinition, removeObsoleteProcedureInputs, setFoldedDefinition} from './procedure-edits.ts';
@@ -676,6 +677,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
         },
         dispose() {
             blockDrag.dispose();
+            scriptSelection.dispose();
             unregisterRelationNavigation();
             unregisterCodeWorkspace();
             shown?.disconnect();
@@ -703,6 +705,7 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
     shown?.observe(injection);
 
     const blockDrag = attachBlockDrag({vm, workspace, ScratchBlocks: blocks, onError, prepareImport: bridge.prepareImport});
+    const scriptSelection = attachScriptSelection({workspace, ScratchBlocks: blocks, vm, onError});
     const visibility = attachScriptVisibility({vm, blocks, workspace, homeDocument, onError});
     const unregisterRelationNavigation = registerScriptRelationNavigation(vm, endpoint => {
         if (vm.runtime.getTargetById(endpoint.targetId)?.blocks._blocks[endpoint.blockId] === undefined) return;

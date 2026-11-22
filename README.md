@@ -10,6 +10,18 @@ Opening a function or hat adjusts the zoom to its rendered script and places the
 
 Hosts with a separate workspace can call `fitScriptInWorkspace(workspace, scriptId, ScratchBlocks)` from the root or `./sprite-code-windows` export. It returns `false` if the viewport or block is not ready, so the host can retry after layout.
 
+## Selecting several scripts
+
+In the free layout, several scripts can be selected and then moved or deleted together. The selection is screen state and is not saved with the project.
+
+- Ctrl+click (⌘+click on macOS) adds or removes the whole clicked script without running it. Ctrl+click is not used on macOS, where it opens the context menu.
+- Shift+drag on the background draws a rectangle and adds the scripts it touches. Shift+Alt+drag removes them.
+- Dragging a selected script moves the other selected scripts by the same distance; dropping it on the palette deletes them all. Either is undone in one step.
+- Delete or Backspace, or "Delete N selected scripts" in the block context menu, deletes them together. If that removes the definition of a function still in use, the whole deletion is undone with Scratch's warning.
+- Escape, a click on the background, pressing an unselected script or switching sprites clears the selection.
+
+`attachCodeWorkspace` installs it. Import `attachScriptSelection` from `@kubohiroya/turbowarp-plus-editor-code-views/script-selection` to use it on its own.
+
 ## Rearranging scripts by relationships (Editor #727)
 
 Right-click a free-layout background and choose **Rearrange scripts by relationships**. Preview the current sprite or stage, then confirm or cancel. One Undo/Redo restores the positions and attached comments. Other targets stay fixed. Editable popouts use their existing edit lease; read-only and serial views cannot run this operation.
