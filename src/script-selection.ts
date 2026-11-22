@@ -5,6 +5,7 @@
  * - Ctrl+click (⌘+click on macOS, where Ctrl+click is the context menu) adds or removes the clicked script.
  * - Shift+drag on the background draws a rectangle; scripts it touches are added. Shift+Alt+drag removes them.
  * - Dragging a selected script moves the others by the same distance; dropping it on the palette deletes them all.
+ * - Dropping a selected script on a sprite or the stage in the sprite list copies every selected script there.
  * - Delete or Backspace, or the block context menu, deletes every selected script as one undoable edit.
  * - Escape, a plain click on the background or a plain press on an unselected script clears the selection.
  *
@@ -57,6 +58,72 @@ export const intersects = (a: Rect, b: Rect) => a.left <= b.right && b.left <= a
 const labels = (locale: string, count: number) => /^ja(?:-|$)/i.test(locale) ?
     {remove: `選択した${count}個のスクリプトを削除`} :
     {remove: count === 1 ? 'Delete 1 selected script' : `Delete ${count} selected scripts`};
+
+/** A block as the VM stores it. */
+interface VMBlock {
+    id: string;
+    opcode?: string;
+    next?: string | null;
+    topLevel?: boolean;
+    x?: number;
+    y?: number;
+    inputs?: Record<string, {block?: string | null; shadow?: string | null}>;
+    comment?: string;
+}
+interface SelectionVM {
+    on(name: string, listener: () => void): void;
+    removeListener(name: string, listener: () => void): void;
+    editingTarget?: {id: string; blocks: {_blocks: Record<string, VMBlock>}} | null;
+    shareBlocksToTarget?(blocks: unknown, targetId: string, fromTargetId?: string): Promise<unknown>;
+}
+
+/** Copies of a script's blocks, its top block first. Comments stay behind, as in a single-script drop. */
+export function copyScript(blocks: Record<string, VMBlock>, topId: string): VMBlock[] {
+    const copies: VMBlock[] = [];
+    const seen = new Set<string>();
+    const pending: Array<string | null | undefined> = [topId];
+    while (pending.length) {
+        const id = pending.shift();
+        if (!id || seen.has(id) || !blocks[id]) continue;
+        seen.add(id);
+        const copy = JSON.parse(JSON.stringify(blocks[id])) as VMBlock;
+        delete copy.comment;
+        copies.push(copy);
+        pending.push(copy.next);
+        for (const input of Object.values(copy.inputs ?? {})) pending.push(input.block, input.shadow);
+    }
+    return copies;
+}
+
+/** A group drop outside the blocks area: the dragged script and copies of the others. */
+export interface OutsideDrop {
+    /** The target the scripts came from. */
+    source: string;
+    /** The dragged script's top opcode and number of blocks, which its copy keeps under new ids. */
+    opcode: string;
+    size: number;
+    origin: Point;
+    scripts: VMBlock[][];
+}
+
+/**
+ * Add the other selected scripts to the blocks the GUI copies to a sprite, keeping their places
+ * relative to the dragged script, which the GUI moves into the receiving sprite's view.
+ * @returns Whether the payload is the dragged script's and the scripts were added.
+ */
+export function addCompanions(payload: unknown, drop: OutsideDrop) {
+    const list = Array.isArray(payload) ? payload as VMBlock[] :
+        Array.isArray((payload as {blocks?: unknown})?.blocks) ? (payload as {blocks: VMBlock[]}).blocks : null;
+    const top = list?.find(block => block.topLevel);
+    if (!top || top.opcode !== drop.opcode || list.length !== drop.size) return false;
+    const dx = (top.x ?? drop.origin.x) - drop.origin.x;
+    const dy = (top.y ?? drop.origin.y) - drop.origin.y;
+    for (const script of drop.scripts) {
+        const [head] = script;
+        list.push({...head, x: (head.x ?? 0) + dx, y: (head.y ?? 0) + dy}, ...script.slice(1));
+    }
+    return true;
+}
 
 /** Procedure codes called by a block but defined nowhere: the calls a deletion would leave behind. */
 function orphanCalls(workspace): Set<string> {
@@ -117,7 +184,7 @@ function installHooks(blocks) {
     }
 }
 
-function createSelection({workspace, blocks, onError, getLocale}) {
+function createSelection({workspace, blocks, onError, getLocale, vm}: {workspace; blocks; onError; getLocale; vm?: SelectionVM}) {
     const svg: SVGSVGElement = workspace.getParentSvg();
     const injection: HTMLElement = workspace.getInjectionDiv();
     const document = injection.ownerDocument;
@@ -125,6 +192,8 @@ function createSelection({workspace, blocks, onError, getLocale}) {
     const mac = isMacPlatform(window.navigator);
     const selected = new Set<string>();
     let companions: {block: SelectableBlock; start: Point}[] = [];
+    /** The last group drop outside the blocks area, which the GUI may copy to a sprite. */
+    let outsideDrop: OutsideDrop | undefined;
     let marquee: {start: Point; element: HTMLDivElement; remove: boolean; abort: AbortController} | undefined;
     let pendingClear: {start: Point} | undefined;
 
@@ -170,6 +239,17 @@ function createSelection({workspace, blocks, onError, getLocale}) {
         selected.clear();
         for (const id of ids) selected.add(id);
         paint();
+    }
+
+    function rememberOutsideDrop(dragged: string, ids: string[]) {
+        // Read the VM before it hears of these moves, so the copies keep the places they had.
+        const source = vm?.editingTarget;
+        const records = source?.blocks?._blocks;
+        const head = records?.[dragged];
+        if (!head) return;
+        outsideDrop = {source: source.id, opcode: head.opcode, size: copyScript(records, dragged).length,
+            origin: {x: head.x ?? 0, y: head.y ?? 0},
+            scripts: ids.map(id => copyScript(records, id)).filter(script => script.length)};
     }
 
     function toggle(block: SelectableBlock) {
@@ -325,6 +405,7 @@ function createSelection({workspace, blocks, onError, getLocale}) {
         deleteSelected,
         dragStarted(dragger) {
             companions = [];
+            outsideDrop = undefined;
             const dragged = dragger.draggingBlock_ as SelectableBlock;
             if (!selected.has(dragged.id) || dragged.getParent()) {
                 // Dragging an unselected script, or a part pulled out of a selected one, moves only that.
@@ -357,8 +438,15 @@ function createSelection({workspace, blocks, onError, getLocale}) {
                 rollBackOrphans(before);
             } else {
                 // A drop outside the blocks area is undone as one group by Blockly, these moves included.
+                if (dragger.wasOutside_) rememberOutsideDrop(dragger.draggingBlock_.id, moving.map(({block}) => block.id));
                 for (const {block} of moving) block.moveBy(offset.x, offset.y);
             }
+        },
+        /** The group drop the GUI is copying to a sprite, once. */
+        takeOutsideDrop() {
+            const drop = outsideDrop;
+            outsideDrop = undefined;
+            return drop;
         },
         blockMenuOption(block: SelectableBlock) {
             if (readOnly() || !selected.has(block.getRootBlock().id)) return undefined;
@@ -382,14 +470,30 @@ export function attachScriptSelection({workspace, ScratchBlocks: blocks, vm, onE
     getLocale = () => blocks.ScratchMsgs?.currentLocale_ ?? ''}: {
     workspace; ScratchBlocks; onError?: (error: unknown) => void; getLocale?: () => string;
     /** Clears the selection when the workspace loads another sprite or the stage. */
-    vm?: {on(name: string, listener: () => void): void; removeListener(name: string, listener: () => void): void};
+    vm?: SelectionVM;
 }) {
     installHooks(blocks);
     owners.get(workspace)?.dispose();
-    const selection = createSelection({workspace, blocks, onError, getLocale});
+    const selection = createSelection({workspace, blocks, onError, getLocale, vm});
     owners.set(workspace, selection);
     const clearOnLoad = () => selection.clear();
     vm?.on('workspaceUpdate', clearOnLoad);
+    // The GUI copies a script dropped on the sprite list with the source target as the third
+    // argument; add the rest of the selection to that copy.
+    const share = vm?.shareBlocksToTarget;
+    const hadOwnShare = Boolean(vm) && Object.prototype.hasOwnProperty.call(vm, 'shareBlocksToTarget');
+    const sharing = share && function (this: SelectionVM, payload: unknown, targetId: string, fromTargetId?: string) {
+        if (fromTargetId && fromTargetId !== targetId) {
+            const drop = selection.takeOutsideDrop();
+            try {
+                if (drop?.source === fromTargetId) addCompanions(payload, drop);
+            } catch (error) {
+                onError(error);
+            }
+        }
+        return share.call(this, payload, targetId, fromTargetId);
+    };
+    if (sharing) vm.shareBlocksToTarget = sharing;
     return {
         /** The ids of the selected scripts' top blocks. */
         get selected() {
@@ -402,6 +506,10 @@ export function attachScriptSelection({workspace, ScratchBlocks: blocks, vm, onE
         deleteSelected: selection.deleteSelected,
         dispose() {
             vm?.removeListener('workspaceUpdate', clearOnLoad);
+            if (sharing && vm.shareBlocksToTarget === sharing) {
+                if (hadOwnShare) vm.shareBlocksToTarget = share;
+                else delete vm.shareBlocksToTarget;
+            }
             if (owners.get(workspace) !== selection) return;
             owners.delete(workspace);
             selection.dispose();

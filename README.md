@@ -17,6 +17,7 @@ In the free layout, several scripts can be selected and then moved or deleted to
 - Ctrl+click (⌘+click on macOS) adds or removes the whole clicked script without running it. Ctrl+click is not used on macOS, where it opens the context menu.
 - Shift+drag on the background draws a rectangle and adds the scripts it touches. Shift+Alt+drag removes them.
 - Dragging a selected script moves the other selected scripts by the same distance; dropping it on the palette deletes them all. Either is undone in one step.
+- Dropping a selected script on a sprite or the stage in the sprite list copies every selected script there, keeping their places relative to the dragged one. The selected scripts stay where they were.
 - Delete or Backspace, or "Delete N selected scripts" in the block context menu, deletes them together. If that removes the definition of a function still in use, the whole deletion is undone with Scratch's warning.
 - Escape, a click on the background, pressing an unselected script or switching sprites clears the selection.
 

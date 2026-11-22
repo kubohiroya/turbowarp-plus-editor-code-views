@@ -222,3 +222,30 @@ test('dropping a selected script on the palette deletes the whole selection in o
         assert.deepEqual(errors, []);
     } finally {await page.close();}
 });
+
+test('dropping a selected script on a sprite copies every selected script there, keeping their places', async () => {
+    const {page, errors} = await open();
+    try {
+        await fixture(page, 'fixture.spriteList("Other")');
+        await toggle(page, 'a');
+        await toggle(page, 'd');
+        const before = {a: await position(page, 'a'), d: await position(page, 'd')};
+        const start = await hat(page, 'a');
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move(1250, start.y + 100, {steps: 10});
+        await page.mouse.up();
+        await settle(page);
+        await fixture(page, 'fixture.shared');
+        await settle(page);
+        const copy = {opcode: 'event_whenkeypressed', below: ['looks_show']};
+        assert.deepEqual(await fixture(page, 'fixture.scriptsOf("Other")'), [
+            {opcode: 'event_whenkeypressed', x: 30, y: 30, below: ['looks_show']},
+            {opcode: 'event_whenkeypressed', x: 40, y: 40, below: ['looks_show']},
+            {...copy, x: 30 + before.d.x - before.a.x, y: 30 + before.d.y - before.a.y}
+        ].sort((a, b) => a.x - b.x || a.y - b.y));
+        assert.deepEqual(await position(page, 'a'), before.a, 'the dropped script returns');
+        assert.deepEqual(await position(page, 'd'), before.d, 'so do the others');
+        assert.deepEqual(errors, []);
+    } finally {await page.close();}
+});
