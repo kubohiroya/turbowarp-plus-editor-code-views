@@ -56,7 +56,7 @@ function fixture({locale = 'ja', timeout = 10000} = {}) {
             getTargetById: (id: string) => this.runtime.targets.find(target => target.id === id),
             getTargetForStage: () => stage
         };
-        shareBlocksToTarget(blocks: {withVariable?: boolean}, targetId: string, fromTargetId?: string) {
+        shareBlocksToTarget(blocks: {withVariable?: boolean; scripts?: number}, targetId: string, fromTargetId?: string) {
             calls.push([blocks, targetId, fromTargetId]);
             const target = this.runtime.getTargetById(targetId);
             let variable: string | undefined;
@@ -65,10 +65,12 @@ function fixture({locale = 'ja', timeout = 10000} = {}) {
                 (target.isStage ? stage : target).variables[variable] = {name: 'score'};
             }
             return Promise.resolve().then(() => {
-                const root = `b${nextId++}`;
-                const child = `b${nextId++}`;
-                target.blocks._blocks[root] = {id: root, parent: null, topLevel: true};
-                target.blocks._blocks[child] = {id: child, parent: root, topLevel: false, variable};
+                for (let script = 0; script < (blocks.scripts ?? 1); script++) {
+                    const root = `b${nextId++}`;
+                    const child = `b${nextId++}`;
+                    target.blocks._blocks[root] = {id: root, parent: null, topLevel: true};
+                    target.blocks._blocks[child] = {id: child, parent: root, topLevel: false, variable};
+                }
             });
         }
         emitWorkspaceUpdate() {updates.workspace++;}
@@ -193,4 +195,19 @@ test('wording for each locale', () => {
     assert.equal(spriteCopyNoticeMessages('ja').undo, '元に戻す');
     assert.equal(spriteCopyNoticeMessages('fr').undo, 'Undo');
     assert.equal(spriteCopyNoticeMessages().close, 'Close');
+});
+
+test('a drop of several scripts says how many were copied, and Undo removes them all', async () => {
+    const view = fixture();
+    await view.vm.shareBlocksToTarget({scripts: 3}, 's2', 's1');
+    await view.settle();
+    assert.match(view.notice().textContent, /スプライト「Sprite2」に3個のスクリプトをコピーしました。/);
+    view.click(view.notice().querySelector('.tw-sprite-copy-notice-undo'));
+    assert.deepEqual(Object.keys(view.sprite2.blocks._blocks), ['own']);
+    await view.vm.shareBlocksToTarget({scripts: 2}, 'stage', 's1');
+    await view.settle();
+    assert.match(view.notice().textContent, /背景に2個のスクリプトをコピーしました。/);
+    assert.match(spriteCopyNoticeMessages('en').copiedToSprite('Cat', 2), /^Copied 2 scripts to “Cat”\.$/);
+    assert.match(spriteCopyNoticeMessages('ja-hira').copiedToStage(2), /^はいけいに2このスクリプトをコピーしました。$/);
+    view.attached.dispose();
 });

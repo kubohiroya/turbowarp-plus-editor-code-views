@@ -61,22 +61,25 @@ export interface SharedCopy {
 
 const messages = {
     en: {
-        copiedToSprite: (name: string) => `Copied the script to “${name}”.`,
-        copiedToStage: 'Copied the script to the Stage.',
+        copiedToSprite: (name: string, count = 1) => count > 1 ?
+            `Copied ${count} scripts to “${name}”.` : `Copied the script to “${name}”.`,
+        copiedToStage: (count = 1) => count > 1 ? `Copied ${count} scripts to the Stage.` : 'Copied the script to the Stage.',
         undo: 'Undo', close: 'Close',
         removedFromSprite: (name: string) => `Removed the copy from “${name}”.`,
         removedFromStage: 'Removed the copy from the Stage.'
     },
     ja: {
-        copiedToSprite: (name: string) => `スプライト「${name}」にスクリプトをコピーしました。`,
-        copiedToStage: '背景にスクリプトをコピーしました。',
+        copiedToSprite: (name: string, count = 1) => count > 1 ?
+            `スプライト「${name}」に${count}個のスクリプトをコピーしました。` : `スプライト「${name}」にスクリプトをコピーしました。`,
+        copiedToStage: (count = 1) => count > 1 ? `背景に${count}個のスクリプトをコピーしました。` : '背景にスクリプトをコピーしました。',
         undo: '元に戻す', close: '閉じる',
         removedFromSprite: (name: string) => `スプライト「${name}」からコピーを取り消しました。`,
         removedFromStage: '背景からコピーを取り消しました。'
     },
     'ja-hira': {
-        copiedToSprite: (name: string) => `スプライト「${name}」にスクリプトをコピーしました。`,
-        copiedToStage: 'はいけいにスクリプトをコピーしました。',
+        copiedToSprite: (name: string, count = 1) => count > 1 ?
+            `スプライト「${name}」に${count}このスクリプトをコピーしました。` : `スプライト「${name}」にスクリプトをコピーしました。`,
+        copiedToStage: (count = 1) => count > 1 ? `はいけいに${count}このスクリプトをコピーしました。` : 'はいけいにスクリプトをコピーしました。',
         undo: 'もとにもどす', close: 'とじる',
         removedFromSprite: (name: string) => `スプライト「${name}」からコピーをとりけしました。`,
         removedFromStage: 'はいけいからコピーをとりけしました。'
@@ -176,7 +179,8 @@ export function attachSpriteCopyNotice({vm, document, locale, timeout = 10000,
         notice.setAttribute('aria-live', 'polite');
         const message = document.createElement('span');
         message.className = 'tw-sprite-copy-notice-text';
-        message.textContent = target.isStage ? words.copiedToStage : words.copiedToSprite(name);
+        const count = copy.roots.length;
+        message.textContent = target.isStage ? words.copiedToStage(count) : words.copiedToSprite(name, count);
         const undo = document.createElement('button');
         undo.type = 'button';
         undo.className = 'tw-sprite-copy-notice-undo';

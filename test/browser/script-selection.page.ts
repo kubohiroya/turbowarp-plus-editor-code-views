@@ -75,7 +75,32 @@ const script = (id: string, x: number, y: number) => ({
             vm.setEditingTarget(vm.runtime.targets.find((entry: any) => entry.getName() === name).id);
             await settle();
         },
-        dispose() {bridge.dispose();}
+        dispose() {bridge.dispose();},
+        /**
+         * Leave room right of the code area and copy a script dropped there to `name`, as the
+         * GUI's sprite list does: it places the top block in the receiving sprite's view.
+         */
+        async spriteList(name: string) {
+            document.getElementById('workspace').style.right = '300px';
+            Blockly.svgResize(workspace);
+            const receiver = vm.runtime.targets.find((entry: any) => entry.getName() === name);
+            vm.runtime.on('BLOCK_DRAG_END', (payload: any[]) => {
+                const top = payload.find(entry => entry.topLevel);
+                top.x = 30;
+                top.y = 30;
+                (globalThis as any).fixture.shared = vm.shareBlocksToTarget(payload, receiver.id, vm.editingTarget.id);
+            });
+            await settle();
+        },
+        /** The scripts of a target, as each top block's opcode, place and the opcodes below it. */
+        scriptsOf(name: string) {
+            const {_blocks: records} = vm.runtime.targets.find((entry: any) => entry.getName() === name).blocks;
+            return Object.values(records).filter((record: any) => record.topLevel).map((record: any) => {
+                const below: string[] = [];
+                for (let next = record.next; next; next = records[next].next) below.push(records[next].opcode);
+                return {opcode: record.opcode, x: Math.round(record.x), y: Math.round(record.y), below};
+            }).sort((a, b) => a.x - b.x || a.y - b.y);
+        }
     };
     await settle();
 };
