@@ -71,18 +71,18 @@ const messages = {
     ja: {
         copiedToSprite: (name: string, count = 1) => count > 1 ?
             `スプライト「${name}」に${count}個のスクリプトをコピーしました。` : `スプライト「${name}」にスクリプトをコピーしました。`,
-        copiedToStage: (count = 1) => count > 1 ? `背景に${count}個のスクリプトをコピーしました。` : '背景にスクリプトをコピーしました。',
+        copiedToStage: (count = 1) => count > 1 ? `ステージに${count}個のスクリプトをコピーしました。` : 'ステージにスクリプトをコピーしました。',
         undo: '元に戻す', close: '閉じる',
         removedFromSprite: (name: string) => `スプライト「${name}」からコピーを取り消しました。`,
-        removedFromStage: '背景からコピーを取り消しました。'
+        removedFromStage: 'ステージからコピーを取り消しました。'
     },
     'ja-hira': {
         copiedToSprite: (name: string, count = 1) => count > 1 ?
             `スプライト「${name}」に${count}このスクリプトをコピーしました。` : `スプライト「${name}」にスクリプトをコピーしました。`,
-        copiedToStage: (count = 1) => count > 1 ? `はいけいに${count}このスクリプトをコピーしました。` : 'はいけいにスクリプトをコピーしました。',
+        copiedToStage: (count = 1) => count > 1 ? `ステージに${count}このスクリプトをコピーしました。` : 'ステージにスクリプトをコピーしました。',
         undo: 'もとにもどす', close: 'とじる',
         removedFromSprite: (name: string) => `スプライト「${name}」からコピーをとりけしました。`,
-        removedFromStage: 'はいけいからコピーをとりけしました。'
+        removedFromStage: 'ステージからコピーをとりけしました。'
     }
 };
 export type SpriteCopyNoticeMessages = typeof messages.en;
