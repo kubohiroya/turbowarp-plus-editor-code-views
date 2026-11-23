@@ -133,7 +133,7 @@ test('a variable shared to the stage stays when another script now uses it', asy
     const view = fixture();
     await view.vm.shareBlocksToTarget({withVariable: true}, 'stage', 's1');
     await view.settle();
-    assert.match(view.notice().textContent, /背景にスクリプトをコピーしました。/);
+    assert.match(view.notice().textContent, /ステージにスクリプトをコピーしました。/);
     assert.ok(view.stageTile().hasAttribute(RECEIVED_COPY_ATTRIBUTE));
     const [variable] = Object.keys(view.stage.variables);
     view.sprite1.blocks._blocks.user = {id: 'user', parent: null, topLevel: true, variable} as never;
@@ -206,8 +206,8 @@ test('a drop of several scripts says how many were copied, and Undo removes them
     assert.deepEqual(Object.keys(view.sprite2.blocks._blocks), ['own']);
     await view.vm.shareBlocksToTarget({scripts: 2}, 'stage', 's1');
     await view.settle();
-    assert.match(view.notice().textContent, /背景に2個のスクリプトをコピーしました。/);
+    assert.match(view.notice().textContent, /ステージに2個のスクリプトをコピーしました。/);
     assert.match(spriteCopyNoticeMessages('en').copiedToSprite('Cat', 2), /^Copied 2 scripts to “Cat”\.$/);
-    assert.match(spriteCopyNoticeMessages('ja-hira').copiedToStage(2), /^はいけいに2このスクリプトをコピーしました。$/);
+    assert.match(spriteCopyNoticeMessages('ja-hira').copiedToStage(2), /^ステージに2このスクリプトをコピーしました。$/);
     view.attached.dispose();
 });

@@ -98,6 +98,12 @@ test('the stage has no motion group, and cancel or Escape leaves without applyin
     assert.equal(stage.cancelled, 1);
     assert.equal(stage.choice, undefined);
 
+    // The stage that owns scripts is "ステージ"; "背景" names only its backdrop images.
+    const japaneseStage = open({isStage: true, targetName: 'Stage'});
+    assert.ok(japaneseStage.text().includes('ステージ'));
+    assert.equal(japaneseStage.text().includes('背景'), false);
+    japaneseStage.close();
+
     const escaped = open();
     escaped.dialog.dispatchEvent(new dom.window.Event('cancel', {cancelable: true}));
     assert.equal(escaped.cancelled, 1);

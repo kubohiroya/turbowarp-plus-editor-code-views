@@ -64,7 +64,7 @@ const messages = {
         hiddenInUse: (count: number) => `Hidden and in use: ${count}`, otherBlocks: 'Other blocks', cancel: 'Cancel', confirm: 'Confirm', close: 'Close'
     },
     ja: {
-        title: 'パレット内のブロックグループの表示・非表示の設定', sprite: (name: string) => `スプライト「${name}」`, stage: '背景',
+        title: 'パレット内のブロックグループの表示・非表示の設定', sprite: (name: string) => `スプライト「${name}」`, stage: 'ステージ',
         newSprite: (name: string) => `新しいスプライト「${name}」`,
         quick: 'まとめて選ぶ', copyFrom: '設定のコピー元', copy: 'コピー', chooseSprite: 'スプライトを選ぶ',
         sets: '設定のショートカット', addSet: '設定のショートカットを追加', setName: 'ショートカットの名前', add: '追加',
