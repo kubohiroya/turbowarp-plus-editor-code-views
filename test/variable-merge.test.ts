@@ -263,9 +263,12 @@ test('"of" blocks whose sprite is a reporter are reported, not rewritten', () =>
 });
 
 test('messages follow the locale and describe plans and refusals', () => {
-    assert.equal(variableMergeMessages('ja').makeGlobal, 'すべてのスプライト用にする');
-    assert.equal(variableMergeMessages('ja-Hira').makeLocal, 'この スプライトだけに する');
-    assert.equal(variableMergeMessages('fr').makeGlobal, 'Make it for all sprites');
+    assert.equal(variableMergeMessages('ja').makeGlobal('variable'), 'グローバル変数にする');
+    assert.equal(variableMergeMessages('ja').makeLocal('list'), 'スプライトリストにする');
+    assert.equal(variableMergeMessages('ja').madeLocal('score', 'variable'), '「score」をスプライト変数にしました。');
+    assert.equal(variableMergeMessages('ja-Hira').makeLocal('variable'), 'スプライトへんすうに する');
+    assert.equal(variableMergeMessages('fr').makeGlobal('variable'), 'Make it a global variable');
+    assert.equal(variableMergeMessages('en').madeGlobal('items', 'list'), '“items” is now a global list.');
     const p = project({
         stageVars: [variable('g', 'score', 5)],
         sprite1Vars: [variable('a', 'scor', 3)],
@@ -420,8 +423,8 @@ test('the palette\'s variable menu offers the scope change for a sprite, not for
         fake.menu.customContextMenu.call(b, options);
         return options.map(option => option.text);
     };
-    assert.deepEqual(menu(block('a')), ['Rename variable', 'Make it for all sprites']);
-    assert.deepEqual(menu(block('g')), ['Rename variable', 'Make it for this sprite only']);
+    assert.deepEqual(menu(block('a')), ['Rename variable', 'Make it a global variable']);
+    assert.deepEqual(menu(block('g')), ['Rename variable', 'Make it a sprite variable']);
     assert.deepEqual(menu(block('a', false)), ['Rename variable']);
     p.vm.editingTarget = p.stage;
     assert.deepEqual(menu(block('g')), ['Rename variable']);

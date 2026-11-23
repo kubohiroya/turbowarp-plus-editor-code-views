@@ -19,6 +19,7 @@ export type {Plan, PlanResult, Refusal, UndoRecord, VmLike, Warning} from './var
  */
 
 type Kind = 'variable' | 'list';
+const kindOf = (plan: Plan): Kind => plan.source.type === 'list' ? 'list' : 'variable';
 
 const MESSAGES = {
     en: {
@@ -31,8 +32,8 @@ const MESSAGES = {
         values: (a: string, b: string, aValue: string, bValue: string) =>
             `“${b}” keeps its value ${bValue}. The value of “${a}”, ${aValue}, is discarded.`,
         sensing: (n: number) => `${n} “( ) of ( )” block${n === 1 ? '' : 's'} will be updated.`,
-        makeGlobal: 'Make it for all sprites',
-        makeLocal: 'Make it for this sprite only',
+        makeGlobal: (kind: Kind): string => kind === 'list' ? 'Make it a global list' : 'Make it a global variable',
+        makeLocal: (kind: Kind): string => kind === 'list' ? 'Make it a sprite list' : 'Make it a sprite variable',
         globalLead: (a: string) => `Make “${a}” usable by all sprites?`,
         localLead: (a: string, sprite: string) => `Make “${a}” usable by “${sprite}” only?`,
         warnShare: 'Clones of this sprite kept a value each; afterwards they all share one value.',
@@ -52,8 +53,8 @@ const MESSAGES = {
         },
         merge: 'Merge', change: 'Change', cancel: 'Cancel', ok: 'OK',
         merged: (a: string, b: string) => `Merged “${a}” into “${b}”.`,
-        madeGlobal: (a: string) => `“${a}” is now for all sprites.`,
-        madeLocal: (a: string) => `“${a}” is now for this sprite only.`,
+        madeGlobal: (a: string, kind: Kind) => `“${a}” is now a global ${kind}.`,
+        madeLocal: (a: string, kind: Kind) => `“${a}” is now a sprite ${kind}.`,
         undo: 'Undo', undone: 'Undone.', close: 'Close', failed: 'The change could not be made.',
         items: (n: number) => `${n} item${n === 1 ? '' : 's'}`
     },
@@ -66,8 +67,8 @@ const MESSAGES = {
         values: (a: string, b: string, aValue: string, bValue: string) =>
             `「${b}」の値 ${bValue} を残し、「${a}」の値 ${aValue} は捨てます。`,
         sensing: (n: number) => `「( ) の ( )」のブロック ${n} 個も書き換えます。`,
-        makeGlobal: 'すべてのスプライト用にする',
-        makeLocal: 'このスプライトのみにする',
+        makeGlobal: (kind: Kind): string => kind === 'list' ? 'グローバルリストにする' : 'グローバル変数にする',
+        makeLocal: (kind: Kind): string => kind === 'list' ? 'スプライトリストにする' : 'スプライト変数にする',
         globalLead: (a: string) => `「${a}」を、すべてのスプライトで使えるようにしますか？`,
         localLead: (a: string, sprite: string) => `「${a}」を、「${sprite}」だけで使えるようにしますか？`,
         warnShare: 'このスプライトのクローンは、これまでそれぞれ別の値を持っていましたが、変更後は1つの値を共有します。',
@@ -87,8 +88,8 @@ const MESSAGES = {
         },
         merge: '統合', change: '変更', cancel: 'キャンセル', ok: 'OK',
         merged: (a: string, b: string) => `「${a}」を「${b}」に統合しました。`,
-        madeGlobal: (a: string) => `「${a}」をすべてのスプライト用にしました。`,
-        madeLocal: (a: string) => `「${a}」をこのスプライトのみにしました。`,
+        madeGlobal: (a: string, kind: Kind) => `「${a}」をグローバル${kind === 'list' ? 'リスト' : '変数'}にしました。`,
+        madeLocal: (a: string, kind: Kind) => `「${a}」をスプライト${kind === 'list' ? 'リスト' : '変数'}にしました。`,
         undo: '元に戻す', undone: '元に戻しました。', close: '閉じる', failed: '変更できませんでした。',
         items: (n: number) => `${n} 個の項目`
     },
@@ -101,8 +102,8 @@ const MESSAGES = {
         values: (a: string, b: string, aValue: string, bValue: string) =>
             `「${b}」の あたい ${bValue} を のこし、「${a}」の あたい ${aValue} は すてます。`,
         sensing: (n: number) => `「( ) の ( )」の ブロック ${n}こも かきかえます。`,
-        makeGlobal: 'すべての スプライトように する',
-        makeLocal: 'この スプライトだけに する',
+        makeGlobal: (kind: Kind): string => kind === 'list' ? 'グローバルリストに する' : 'グローバルへんすうに する',
+        makeLocal: (kind: Kind): string => kind === 'list' ? 'スプライトリストに する' : 'スプライトへんすうに する',
         globalLead: (a: string) => `「${a}」を、すべての スプライトで つかえるように しますか？`,
         localLead: (a: string, sprite: string) => `「${a}」を、「${sprite}」だけで つかえるように しますか？`,
         warnShare: 'この スプライトの クローンは、いままで べつべつの あたいを もっていましたが、かえたあとは 1つの あたいを いっしょに つかいます。',
@@ -122,8 +123,8 @@ const MESSAGES = {
         },
         merge: 'まとめる', change: 'かえる', cancel: 'キャンセル', ok: 'OK',
         merged: (a: string, b: string) => `「${a}」を「${b}」に まとめました。`,
-        madeGlobal: (a: string) => `「${a}」を すべての スプライトように しました。`,
-        madeLocal: (a: string) => `「${a}」を この スプライトだけに しました。`,
+        madeGlobal: (a: string, kind: Kind) => `「${a}」を グローバル${kind === 'list' ? 'リスト' : 'へんすう'}に しました。`,
+        madeLocal: (a: string, kind: Kind) => `「${a}」を スプライト${kind === 'list' ? 'リスト' : 'へんすう'}に しました。`,
         undo: 'もとに もどす', undone: 'もとに もどしました。', close: 'とじる', failed: 'かえられませんでした。',
         items: (n: number) => `${n}この こうもく`
     }
@@ -157,7 +158,7 @@ const formatValue = (value: unknown, list: boolean, m: VariableMergeMessages) =>
  */
 export const describePlan = (plan: Plan, m: VariableMergeMessages) => {
     const list = plan.source.type === 'list';
-    const kind: Kind = list ? 'list' : 'variable';
+    const kind = kindOf(plan);
     const a = plan.source.name;
     const b = plan.destination.name;
     const total = plan.references.reduce((sum, {count}) => sum + count, 0);
@@ -173,7 +174,7 @@ export const describePlan = (plan: Plan, m: VariableMergeMessages) => {
         details.push(...plan.references.map(({target, count}) => m.perTarget(target, count)));
         details.push(m.values(a, b, formatValue(plan.source.value, list, m), formatValue(plan.destination.value, list, m)));
     } else {
-        title = plan.kind === 'global' ? m.makeGlobal : m.makeLocal;
+        title = plan.kind === 'global' ? m.makeGlobal(kind) : m.makeLocal(kind);
         lead = plan.kind === 'global' ? m.globalLead(a) : m.localLead(a, plan.sprite ?? '');
         confirm = m.change;
         details.push(...plan.references.map(({target, count}) => m.perTarget(target, count)));
@@ -422,7 +423,7 @@ export function installVariableMerge (vm: VmLike & {blockListener?: unknown}, Sc
         const {plan} = result;
         const text = describePlan(plan, m);
         const done = plan.kind === 'merge' ? m.merged(plan.source.name, plan.destination.name) :
-            plan.kind === 'global' ? m.madeGlobal(plan.source.name) : m.madeLocal(plan.source.name);
+            plan.kind === 'global' ? m.madeGlobal(plan.source.name, kindOf(plan)) : m.madeLocal(plan.source.name, kindOf(plan));
         openVariableMergeDialog(document, {...text, cancel: m.cancel, onConfirm: () => carryOut(document, plan, done)});
     };
 
@@ -484,8 +485,9 @@ export function installVariableMerge (vm: VmLike & {blockListener?: unknown}, Sc
                 if (!id || !target || target.isStage || !isCodeWorkspace(workspace)) return;
                 const global = Object.hasOwn(vm.runtime.getTargetForStage().variables, id);
                 const m = variableMergeMessages(getLocale());
+                const kind: Kind = fieldName === 'LIST' ? 'list' : 'variable';
                 options.push({
-                    text: global ? m.makeLocal : m.makeGlobal,
+                    text: global ? m.makeLocal(kind) : m.makeGlobal(kind),
                     enabled: true,
                     callback: () => {
                         try {
