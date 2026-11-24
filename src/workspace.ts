@@ -463,12 +463,17 @@ export function attachCodeWorkspace({vm, ScratchBlocks: blocks, workspace, optio
     }
 
     let parentFrame = null;
+    const parentTargets = new Set();
     // Show edits made in a function editor in the code area when it displays the same target.
     function refreshParent(target) {
+        parentTargets.add(target);
         if (parentFrame !== null) return;
         parentFrame = requestAnimationFrame(() => {
             parentFrame = null;
-            if (vm.editingTarget !== target || vm.runtime.getTargetById(target.id) !== target) return;
+            const target = vm.editingTarget;
+            const pending = parentTargets.has(target);
+            parentTargets.clear();
+            if (!pending || vm.runtime.getTargetById(target?.id) !== target) return;
             withoutEvents(blocks, () => vm.emit('workspaceUpdate', {xml: workspaceXML(vm, target)}));
         });
     }
