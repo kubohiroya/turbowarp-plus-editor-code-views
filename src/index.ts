@@ -75,6 +75,7 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
     };
     const views = new Set<CodeView>();
     const dirty = new Set();
+    const externalDirty = new Set();
     const thumbnails = new WeakMap();
     let catalog = [];
     let activeView;
@@ -175,10 +176,27 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
     }
 
     function flushParent() {
-        for (const target of dirty) {
-            if (exists(target) && histories.get(target)?.commit()) publish(target, null, false);
+        const targets = new Set([...dirty, ...externalDirty]);
+        for (const target of targets) {
+            if (exists(target) && histories.get(target)?.commit()) {
+                // Parent workspace events already drew the edit. Direct VM edits also need that view refreshed.
+                publish(target, null, externalDirty.has(target) && !dirty.has(target));
+            }
         }
         dirty.clear();
+        externalDirty.clear();
+    }
+
+    function projectChanged() {
+        if (disposed) return;
+        updateRelations();
+        // Function creation and single-script editors can change the VM without parent Blockly events.
+        // Wait for the whole synchronous edit before comparing snapshots; normal edits commit themselves.
+        const pending = externalDirty.size > 0;
+        for (const target of histories.keys()) externalDirty.add(target);
+        if (!pending && externalDirty.size) queueMicrotask(() => {
+            if (!disposed) flushParent();
+        });
     }
 
     function observeParent(event) {
@@ -700,7 +718,7 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
     vm.on('workspaceUpdate', flushWorkspaceProjection);
     vm.on('EXTENSION_ADDED', extensionsUpdated);
     vm.on('BLOCKSINFO_UPDATE', extensionsUpdated);
-    vm.runtime.on?.('PROJECT_CHANGED', updateRelations);
+    vm.runtime.on?.('PROJECT_CHANGED', projectChanged);
 
     return {attach, flush, setCanDuplicate(available) {
         if (available === canDuplicate) return;
@@ -723,7 +741,7 @@ export function createCodeSession({vm, workspace, ScratchBlocks, document, local
         parent.removeEventListener('focus', parentFocus);
         vm.removeListener('targetsUpdate', targetsUpdated);
         vm.removeListener('workspaceUpdate', flushWorkspaceProjection);
-        vm.runtime.removeListener?.('PROJECT_CHANGED', updateRelations);
+        vm.runtime.removeListener?.('PROJECT_CHANGED', projectChanged);
         vm.removeListener('EXTERNAL_BLOCKS_RELOADED', externalBlocksReloaded);
         vm.removeListener('EXTENSION_ADDED', extensionsUpdated);
         vm.removeListener('BLOCKSINFO_UPDATE', extensionsUpdated);

@@ -127,6 +127,74 @@ test('a focused window gets a lease after release and stale edits do not enter t
     assert.equal(workspace.undo, nativeUndo);
 });
 
+test('direct VM edits reach all views and enter the shared undo history once', async () => {
+    const {session, connect, target, other, vm, workspace} = fixture();
+    const a = connect(target);
+    const b = connect(target);
+    const c = connect(target);
+    const unrelated = connect(other);
+    for (const view of [a, b, c, unrelated]) view.messages.length = 0;
+
+    // Function creation and script editors update the VM without parent workspace events.
+    target.blocks._blocks.function = {id: 'function', opcode: 'procedures_definition', topLevel: true};
+    target.blocks._scripts.push('function');
+    vm.runtime.emit('PROJECT_CHANGED');
+    target.blocks._blocks.prototype = {id: 'prototype', opcode: 'procedures_prototype', parent: 'function'};
+    vm.runtime.emit('PROJECT_CHANGED');
+    await Promise.resolve();
+    for (const view of [a, b, c]) {
+        const updates = view.messages.filter(message => message.type === 'update');
+        assert.equal(updates.length, 1);
+        assert.equal(updates[0].blocks.prototype.parent, 'function');
+        assert.equal(updates[0].revision, 1);
+    }
+    assert.equal(unrelated.messages.filter(message => message.type === 'update').length, 0);
+
+    workspace.undo(false);
+    assert.equal(target.blocks._blocks.function, undefined);
+    assert.equal(a.messages.at(-1).canUndo, false);
+    workspace.undo(true);
+    assert.ok(target.blocks._blocks.function);
+    assert.ok(target.blocks._blocks.prototype);
+    session.dispose();
+});
+
+test('direct edits to a background target synchronize without switching the parent target', async () => {
+    const {session, connect, target, other, vm} = fixture();
+    const a = connect(other);
+    const b = connect(other);
+    const unrelated = connect(target);
+    for (const view of [a, b, unrelated]) view.messages.length = 0;
+    other.blocks._blocks.block.x = 120;
+    vm.runtime.emit('PROJECT_CHANGED');
+    await Promise.resolve();
+    assert.equal(vm.editingTarget, target);
+    for (const view of [a, b]) assert.equal(view.messages.at(-1).blocks.block.x, 120);
+    assert.equal(unrelated.messages.filter(message => message.type === 'update').length, 0);
+    session.dispose();
+});
+
+test('project notifications do not reload the editing source or duplicate a committed edit', async () => {
+    const {session, connect, target, vm} = fixture();
+    const a = connect(target);
+    const b = connect(target);
+    const listen = target.blocks.blocklyListen.bind(target.blocks);
+    target.blocks.blocklyListen = event => {listen(event); vm.runtime.emit('PROJECT_CHANGED');};
+    a.focus();
+    const lease = a.messages.at(-1).lease;
+    a.messages.length = b.messages.length = 0;
+    a.send({type: 'edits', lease, targetId: target.id,
+        events: [{type: 'move', blockId: 'block', newCoordinate: {x: 30, y: 0}}]});
+    await Promise.resolve();
+    assert.deepEqual(a.messages.map(message => message.type), ['history']);
+    assert.equal(b.messages.filter(message => message.type === 'update').length, 1);
+    vm.runtime.emit('PROJECT_CHANGED');
+    await Promise.resolve();
+    assert.deepEqual(a.messages.map(message => message.type), ['history']);
+    assert.equal(b.messages.filter(message => message.type === 'update').length, 1);
+    session.dispose();
+});
+
 test('comment edits use the active target and restore serializable comments in the shared history', () => {
     const {session, connect, target, other, vm} = fixture();
     class Comment {
