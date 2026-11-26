@@ -44,7 +44,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
     };
     /** The part of the editor's screen state the palette settings are saved with. */
     type PaletteScreenState = {
-        register(key: string, slice: {capture(): unknown}): () => void;
+        register(key: string, slice: {capture(): unknown; applyFolderUpdate?(value: unknown): boolean | void}): () => void;
         whenLoaded(): Promise<{slices: Record<string, unknown>} | undefined>;
     };
     let paletteVM: PaletteVM | null = null;
@@ -76,7 +76,15 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         let unregister: (() => void) | undefined;
         const register = () => {
             if (unregister) return;
-            unregister = getScreenState()?.register(paletteScreenStateKey, {capture: () => store.capture(originalTargets(vm))});
+            unregister = getScreenState()?.register(paletteScreenStateKey, {
+                capture: () => store.capture(originalTargets(vm)),
+                applyFolderUpdate(saved) {
+                    if (saved !== undefined && (!saved || typeof saved !== 'object' ||
+                        (saved as {version?: unknown}).version !== 1)) return false;
+                    store.apply(saved, originalTargets(vm));
+                    refreshPalettes();
+                }
+            });
         };
         register();
         // A project opens with its own settings, or with every target at its default.
