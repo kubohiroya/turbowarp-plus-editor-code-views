@@ -408,6 +408,30 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             if (existing) existing.count++;
             else drawings.set(key, {relation, source, destination, count: 1});
         }
+        if (progressiveProjection && !workerUnavailable) {
+            const requests: CutRequests = new Map();
+            for (const drawing of drawings.values()) {
+                if (inViewport(drawing, matrix, area)) arrowEndpoints(drawing, requests);
+            }
+            if (requests.size) {
+                if (!pendingCuts) {
+                    pendingCuts = true;
+                    const keys = [...requests.keys()];
+                    void outlineWorker.calculate([...requests.values()]).then(results => {
+                        pendingCuts = false;
+                        if (disposed) return;
+                        if (results) {
+                            if (workerCuts.size + keys.length > Math.max(4096, 2 * keys.length)) workerCuts.clear();
+                            for (const [i, key] of keys.entries()) workerCuts.set(key, results[i]);
+                        } else workerUnavailable = true;
+                        // Re-read the current projection. The worker only returns intrinsic coordinates.
+                        if (progressiveProjection) schedule();
+                    });
+                }
+                return;
+            }
+        }
+        // Keep the original viewport until we can draw routes and size the projection together.
         if (projection) {
             const unit = 1 / (Math.hypot(matrix.a, matrix.b) || 1);
             const scripts = new Map<string, Box>();
@@ -435,29 +459,6 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 const scale = Math.hypot(matrix.a, matrix.b);
                 projection.setAttribute('viewBox', `${box.x} ${box.y} ${width} ${box.height}`);
                 projection.setAttribute('width', String(width * scale));
-            }
-        }
-        if (progressiveProjection && !workerUnavailable) {
-            const requests: CutRequests = new Map();
-            for (const drawing of drawings.values()) {
-                if (inViewport(drawing, matrix, area)) arrowEndpoints(drawing, requests);
-            }
-            if (requests.size) {
-                if (!pendingCuts) {
-                    pendingCuts = true;
-                    const keys = [...requests.keys()];
-                    void outlineWorker.calculate([...requests.values()]).then(results => {
-                        pendingCuts = false;
-                        if (disposed) return;
-                        if (results) {
-                            if (workerCuts.size + keys.length > Math.max(4096, 2 * keys.length)) workerCuts.clear();
-                            for (const [i, key] of keys.entries()) workerCuts.set(key, results[i]);
-                        } else workerUnavailable = true;
-                        // Re-read the current projection. The worker only returns intrinsic coordinates.
-                        if (progressiveProjection) schedule();
-                    });
-                }
-                return;
             }
         }
         const related = new Set<string>();
