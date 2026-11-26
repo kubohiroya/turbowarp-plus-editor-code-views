@@ -1,3 +1,5 @@
+import {createOutlineWorker} from './script-outline-worker-client.ts';
+import type {OutlineCut} from './script-outline-worker.ts';
 import {outlinePoint} from './script-outline.ts';
 import {isFoldedDefinition} from './procedure-edits.ts';
 import {readScriptRelations, type RelationTarget, type ScriptEndpoint, type ScriptRelation} from './script-relations.ts';
@@ -23,7 +25,8 @@ export interface ScriptRelationContext {
 
 type Point = {x: number; y: number};
 type Box = Point & {width: number; height: number};
-type Anchor = {id: string; box: Box; point(side: 'left' | 'right', fraction: number): Point};
+type CutRequests = Map<string, OutlineCut>;
+type Anchor = {id: string; box: Box; point(side: 'left' | 'right', fraction: number, requests?: CutRequests): Point};
 type Drawing = {relation: ScriptRelation; source?: Anchor; destination?: Anchor; count: number;
     serialRoute?: {right: number; top: number; clearance: number; radius: number}};
 
@@ -93,6 +96,11 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     injection.append(destinations);
     let projection: SVGSVGElement | null = null;
     let projectedLayer: SVGGElement | undefined;
+    let progressiveProjection = false;
+    let pendingCuts = false;
+    let workerUnavailable = false;
+    const outlineWorker = createOutlineWorker(view);
+    const workerCuts = new Map<string, number | null>();
     let frame: number | undefined;
     let disposed = false;
     let dirty = true;
@@ -244,32 +252,49 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         const last = convert({x: bounds.x + bounds.width, y: bounds.y + bounds.height});
         const points = new Map<string, Point>();
         return {id, box: {x: Math.min(first.x, last.x), y: Math.min(first.y, last.y),
-            width: Math.abs(last.x - first.x), height: Math.abs(last.y - first.y)}, point(side, fraction) {
+            width: Math.abs(last.x - first.x), height: Math.abs(last.y - first.y)}, point(side, fraction, requests) {
             const localSide = first.x <= last.x ? side : side === 'left' ? 'right' : 'left';
+            const y = bounds.y + bounds.height * fraction;
+            const fallback = {x: bounds.x + (localSide === 'right' ? bounds.width : 0), y};
             const key = `${localSide}:${fraction}`;
-            if (!points.has(key)) points.set(key, convert(path ? outlinePoint(path, bounds, localSide, fraction) :
-                {x: bounds.x + (localSide === 'right' ? bounds.width : 0), y: bounds.y + bounds.height * fraction}));
+            const data = progressiveProjection && !workerUnavailable && path?.getAttribute('d');
+            if (data) {
+                const cutKey = `${localSide}:${y.toFixed(6)}:${data}`;
+                if (requests && !workerCuts.has(cutKey)) requests.set(cutKey, {data, y, left: localSide === 'left'});
+                const x = workerCuts.get(cutKey);
+                if (typeof x === 'number') return convert({x, y});
+            }
+            if (requests) return convert(fallback);
+            if (!points.has(key)) points.set(key, convert(path ? outlinePoint(path, bounds, localSide, fraction) : fallback));
             return points.get(key);
         }};
     }
 
-    function arrowGeometry({relation, source, destination, count, serialRoute}: Drawing, matrix: DOMMatrix, inverse: DOMMatrix,
-        area: DOMRect, highlighted: boolean) {
+    function arrowEndpoints({relation, source, destination}: Drawing, requests?: CutRequests) {
+        const recursive = source && destination && relation.source.scriptId === relation.destination.scriptId &&
+            relation.source.targetId === relation.destination.targetId;
+        return {
+            start: source?.point('right', recursive ? .75 : .5, requests),
+            end: destination?.point('left', recursive ? .25 : Math.min(.5, 24 / destination.box.height), requests),
+            recursive
+        };
+    }
+
+    function arrowGeometry(drawing: Drawing, matrix: DOMMatrix, inverse: DOMMatrix, area: DOMRect, highlighted: boolean) {
+        const {source, destination, serialRoute} = drawing;
         // Anchor an external link to the viewport edge; the list itself remains keyboard accessible.
         const local = source ?? destination;
         const edgeX = source ? area.right - 12 : area.left + 12;
         const screenY = transform(matrix, {x: local.box.x, y: local.box.y + local.box.height / 2}).y;
         const edge = transform(inverse, {x: edgeX, y: Math.max(area.top + 12, Math.min(area.bottom - 12, screenY))});
-        let start = source ? source.point('right', 0.5) : edge;
-        let end = destination ? destination.point('left', Math.min(0.5, 24 / destination.box.height)) : edge;
+        const endpoints = arrowEndpoints(drawing);
+        const start = endpoints.start ?? edge;
+        const end = endpoints.end ?? edge;
         const bend = Math.max(36, Math.abs(end.x - start.x) / 2);
         let path = `M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}`;
-        const recursive = source && destination && relation.source.scriptId === relation.destination.scriptId &&
-            relation.source.targetId === relation.destination.targetId;
+        const {recursive} = endpoints;
         let badgePoint = {x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 6};
         if (recursive) {
-            start = source.point('right', 0.75);
-            end = destination.point('left', 0.25);
             const right = Math.max(source.box.x + source.box.width, destination.box.x + destination.box.width) + 144;
             const left = Math.min(source.box.x, destination.box.x) - 72;
             const top = Math.min(source.box.y, destination.box.y) - 64;
@@ -427,6 +452,30 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             if (existing) existing.count++;
             else drawings.set(key, {relation, source, destination, count: 1});
         }
+        if (progressiveProjection && !workerUnavailable) {
+            const requests: CutRequests = new Map();
+            for (const drawing of drawings.values()) {
+                if (inViewport(drawing, matrix, area)) arrowEndpoints(drawing, requests);
+            }
+            if (requests.size) {
+                if (!pendingCuts) {
+                    pendingCuts = true;
+                    const keys = [...requests.keys()];
+                    void outlineWorker.calculate([...requests.values()]).then(results => {
+                        pendingCuts = false;
+                        if (disposed) return;
+                        if (results) {
+                            if (workerCuts.size + keys.length > Math.max(4096, 2 * keys.length)) workerCuts.clear();
+                            for (const [i, key] of keys.entries()) workerCuts.set(key, results[i]);
+                        } else workerUnavailable = true;
+                        // Re-read the current projection. The worker only returns intrinsic coordinates.
+                        if (progressiveProjection) schedule();
+                    });
+                }
+                return;
+            }
+        }
+        // Keep the original viewport until we can draw routes and size the projection together.
         if (projection) {
             const unit = 1 / (Math.hypot(matrix.a, matrix.b) || 1);
             const scripts = new Map<string, Box>();
@@ -596,16 +645,26 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             update();
         },
         setEnabled(value: boolean) { enabled = value; update(); },
-        setProjection(svg: SVGSVGElement | null) {
-            if (svg === projection) { update(); return; }
+        setProjection(svg: SVGSVGElement | null, progressive = false) {
+            if (svg === projection && progressive === progressiveProjection) { update(); return; }
+            if (frame !== undefined) view.cancelAnimationFrame(frame);
+            frame = undefined;
             projectedLayer?.remove();
             projection = svg;
+            progressiveProjection = Boolean(svg && progressive);
+            if (svg) layer.style.display = 'none';
+            destinations.hidden = true;
             projectedLayer = svg ? element('g', {'data-script-relation-layer': '', 'aria-hidden': 'true', 'pointer-events': 'none'}) : undefined;
             if (projectedLayer) svg.prepend(projectedLayer);
-            update();
+            if (progressiveProjection && enabled && (visibility.function || visibility.message)) {
+                // Give the projected blocks a paint before reading or drawing the relations.
+                frame = view.requestAnimationFrame(() => {frame = view.requestAnimationFrame(render);});
+            } else update();
         },
         dispose() {
             disposed = true;
+            outlineWorker.dispose();
+            workerCuts.clear();
             markScripts(new Map());
             if (frame !== undefined) view.cancelAnimationFrame(frame);
             mutations.disconnect();

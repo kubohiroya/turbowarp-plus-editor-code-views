@@ -83,6 +83,7 @@ for (const layout of ['z', 'n'] as const) {
             const before = await page.evaluate(() => (globalThis as any).fixture.locations());
             for (const scale of [1, .2, 2]) {
                 await page.evaluate(async scale => {await (globalThis as any).fixture.zoom(scale);}, scale);
+                await expect(page.locator('.tw-script-view-surface [data-script-relation-layer] > [data-script-relation]:not([data-script-external])').first()).toBeAttached();
                 const bounds = await page.evaluate(() => {
                     const gutter = document.querySelector('.tw-script-fold-gutter').getBoundingClientRect();
                     const surface = document.querySelector('.tw-script-view-surface');
@@ -106,6 +107,7 @@ for (const layout of ['z', 'n'] as const) {
         try {
             for (const scale of [1, .2]) {
                 await page.evaluate(async scale => {await (globalThis as any).fixture.zoom(scale);}, scale);
+                await expect(page.locator('.tw-script-view-surface [data-script-relation-layer] > [data-script-relation]:not([data-script-external])').first()).toBeAttached();
                 const routes = await page.locator('.tw-script-view-surface svg').evaluate(svg => {
                     const edge = Math.max(...[...svg.querySelectorAll('[data-script-view-block]')]
                         .map(root => root.getBoundingClientRect().right));

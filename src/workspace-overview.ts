@@ -162,13 +162,25 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     resize.observe(container);
     const events = new view.AbortController();
     let displayedProjection: ScriptProjection | undefined;
-    container.addEventListener('scriptprojectionchange', () => {
-        // A layout update publishes new positions even if its SVG is reused. Scrolling keeps the same projection.
+    function projectionChanged() {
         const next = getScriptProjection(workspace);
+        // Layout changes can reuse the SVG; scrolling keeps the same projection.
+        const changedSVG = next?.svg !== displayedProjection?.svg;
         needsShapes ||= next !== displayedProjection;
         displayedProjection = next;
+        if (changedSVG) {
+            if (frame !== undefined) view.cancelAnimationFrame(frame);
+            frame = undefined;
+            if (next?.progressive) {
+                map.toggleAttribute('hidden', true);
+                // The controls must not act on the previous projection while the new map is pending.
+                frame = view.requestAnimationFrame(() => {frame = view.requestAnimationFrame(render);});
+                return;
+            }
+        }
         schedule();
-    }, {signal: events.signal});
+    }
+    container.addEventListener('scriptprojectionchange', projectionChanged, {signal: events.signal});
     view.addEventListener('resize', schedule, {signal: events.signal});
     view.addEventListener('scroll', schedule, {signal: events.signal, passive: true});
 
@@ -229,7 +241,7 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
         delete map.dataset.dragging;
     };
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) map.addEventListener(type, finish, {signal: events.signal});
-    schedule();
+    projectionChanged();
     return {dispose() {
         disposed = true;
         events.abort(); changes.disconnect(); scrolling.disconnect(); resize.disconnect();

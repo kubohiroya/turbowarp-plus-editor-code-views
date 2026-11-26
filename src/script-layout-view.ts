@@ -204,10 +204,10 @@ export function attachScriptView({
             // Leave room for incoming arrowheads and return paths beside the fixed fold gutter.
             .map(placement => ({...placement, x: placement.x + 40 / scale}));
         const projectedSvg = paintScripts(contents, placements, scale, rebuildProjection ? undefined : projection?.svg);
-        projection = {surface, svg: projectedSvg};
+        projection = {surface, svg: projectedSvg, progressive: view === 'z'};
         rebuildProjection = false;
         paintFoldButtons(placements, scale);
-        relations?.setProjection(projectedSvg);
+        relations?.setProjection(projectedSvg, view === 'z');
         setScriptProjection(workspace, projection);
     }
 

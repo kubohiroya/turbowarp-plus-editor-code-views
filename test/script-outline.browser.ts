@@ -85,3 +85,50 @@ test('geometry without path data retains the native fallback', async () => {
         assert.deepEqual(points,[{x:0,y:20},{x:86,y:20}]);
     } finally {await page.close();}
 });
+
+test('the bundled worker uses native fallback only at recessed outline joins or for unsupported paths', async () => {
+    const page = await browser.newPage();
+    try {
+        await page.goto(server.url);
+        const result = await page.evaluate(async () => {
+            const worker = (globalThis as any).createOutlineWorker(window);
+            try {
+                const recessed = 'M0 0 H120 V28 H20 V72 H120 V100 H0 Z';
+                return await worker.calculate([
+                    {data: 'M0 0 H83 V40 H0 Z', y: 20, left: false},
+                    {data: recessed, y: 28, left: false},
+                    {data: recessed, y: 72.0005, left: false},
+                    {data: recessed, y: 50, left: false},
+                    {data: 'M0 0 invalid', y: 12, left: false}
+                ]);
+            } finally {worker.dispose();}
+        });
+        assert.deepEqual(result, [83, null, null, 20, null]);
+    } finally {await page.close();}
+});
+
+test('a host that blocks the worker can fall back without retrying creation', async () => {
+    const page = await browser.newPage();
+    try {
+        await page.goto(server.url);
+        const result = await page.evaluate(async () => {
+            let attempts = 0;
+            const nativeWorker = window.Worker;
+            window.Worker = class extends nativeWorker {
+                constructor() {
+                    attempts++;
+                    throw new Error('Worker blocked by host');
+                }
+            };
+            const worker = (globalThis as any).createOutlineWorker(window);
+            try {
+                const cuts = [{data: 'M0 0 H83 V40 H0 Z', y: 20, left: false}];
+                return {first: await worker.calculate(cuts), second: await worker.calculate(cuts), attempts};
+            } finally {
+                worker.dispose();
+                window.Worker = nativeWorker;
+            }
+        });
+        assert.deepEqual(result, {first: null, second: null, attempts: 1});
+    } finally {await page.close();}
+});

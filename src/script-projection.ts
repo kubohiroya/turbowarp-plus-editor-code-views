@@ -1,4 +1,4 @@
-export type ScriptProjection = {surface: HTMLElement; svg: SVGSVGElement};
+export type ScriptProjection = {surface: HTMLElement; svg: SVGSVGElement; progressive?: boolean};
 
 const projections = new WeakMap<object, ScriptProjection>();
 
