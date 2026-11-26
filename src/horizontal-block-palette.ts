@@ -207,6 +207,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
 
         let horizontal = false;
         let detached = false;
+        let menuHeight: number | undefined;
         let openId = null;
         let layoutWidth;
         let scrollBeforeSearch = 0;
@@ -220,6 +221,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             return true;
         };
         const setVisible = workspace.setVisible = function (...args) {
+            menuHeight = undefined;
             const result = original.setVisible.apply(this, args);
             if (restoreHorizontalDisplay()) workspace.resize();
             return result;
@@ -368,7 +370,13 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         };
 
         toolbox.getWidth = () => horizontal ? 0 : original.getWidth.call(toolbox);
-        toolbox.getHeight = () => horizontal ? (detached ? 0 : menu.offsetHeight) : original.getHeight.call(toolbox);
+        toolbox.getHeight = () => {
+            if (!horizontal) return original.getHeight.call(toolbox);
+            if (detached) return 0;
+            // Blockly requests metrics for each drag step. The observed palette keeps its height until it resizes.
+            if (menuHeight === undefined || !workspace.isDragging()) menuHeight = menu.offsetHeight;
+            return menuHeight;
+        };
         // The menu stays a drop-to-delete target even when the popover is closed.
         toolbox.getClientRect = () => {
             if (!horizontal) return original.getClientRect.call(toolbox);
@@ -580,12 +588,13 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         const reposition = () => {
             if (openId !== null) flyout.position();
         };
-        const resizeObserver = new win.ResizeObserver(() => {
+        const resizeObserver = new win.ResizeObserver(entries => {
+            if (entries.some(entry => entry.target === menu)) menuHeight = undefined;
             syncInputDocument();
             reposition();
         });
         resizeObserver.observe(surface);
-        resizeObserver.observe(menu);
+        resizeObserver.observe(menu, {box: 'border-box'});
         win.addEventListener('resize', reposition, {signal: events.signal});
 
         flyout.isDragTowardWorkspace = delta => {
@@ -609,6 +618,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             close();
             flyout.scrollTarget = null;
             horizontal = next;
+            menuHeight = undefined;
             workspace.toolboxPosition = horizontal ? ScratchBlocks.TOOLBOX_AT_TOP : verticalPosition;
             menu.classList.toggle(styles.horizontal, horizontal);
             menu.toggleAttribute('data-horizontal-block-palette', horizontal);
@@ -723,6 +733,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             setDetached(value) {
                 close();
                 detached = value;
+                menuHeight = undefined;
                 for (const element of [menu, panel, scrollbar]) element.toggleAttribute('data-detached-palette-source', value);
                 if (!value) flyout.hide();
                 workspace.resize();
