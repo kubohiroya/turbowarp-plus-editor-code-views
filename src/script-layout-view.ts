@@ -75,10 +75,11 @@ export function attachScriptView({
     }
 
     function positionFoldButtons() {
-        gutter.style.left = `${surface.offsetLeft}px`;
-        gutter.style.top = `${surface.offsetTop}px`;
-        gutter.style.height = `${surface.clientHeight}px`;
-        for (const {button, top} of foldButtons.values()) button.style.top = `${top - surface.scrollTop}px`;
+        const {offsetLeft, offsetTop, clientHeight, scrollTop} = surface;
+        gutter.style.left = `${offsetLeft}px`;
+        gutter.style.top = `${offsetTop}px`;
+        gutter.style.height = `${clientHeight}px`;
+        for (const {button, top} of foldButtons.values()) button.style.top = `${top - scrollTop}px`;
     }
 
     function paintFoldButtons(placements: ReturnType<typeof arrangeScripts>, scale: number) {
