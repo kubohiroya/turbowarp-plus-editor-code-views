@@ -687,6 +687,7 @@
 }
 
 .tw-script-relation-destinations button:disabled { cursor: default; }
+.tw-script-relation-destinations button[hidden] { display: none; }
 
 @media (forced-colors: active) {
     :root {

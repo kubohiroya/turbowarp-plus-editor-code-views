@@ -30,6 +30,53 @@ const open = async (layout: 'z' | 'n', locale = 'en') => {
 };
 
 for (const layout of ['z', 'n'] as const) {
+    test(`${layout}: highlighting and zoom update the existing arrow elements`, async () => {
+        const {page, errors} = await open(layout);
+        try {
+            const surface = page.locator('.tw-script-view-surface');
+            const arrow = surface.locator('[data-source-call="call-1"]');
+            const line = arrow.locator('.tw-script-relation-line');
+            const original = await line.elementHandle();
+            const path = await line.getAttribute('d');
+            await surface.locator('[data-id="call-1"]').hover();
+            await expect(arrow).toHaveAttribute('data-highlighted', '');
+            assert.equal(await line.evaluate((node, saved) => node === saved, original), true);
+            await page.evaluate(scale => (globalThis as any).fixture.zoom(scale), 0.5);
+            assert.notEqual(await line.getAttribute('d'), path);
+            assert.equal(await line.evaluate((node, saved) => node === saved, original), true);
+            assert.deepEqual(errors, []);
+        } finally {await page.close();}
+    });
+
+    test(`${layout}: zoom reuses projected blocks and a source edit refreshes them`, async () => {
+        const {page, errors} = await open(layout);
+        try {
+            const root = page.locator('[data-script-view-block="start"]');
+            const original = await root.elementHandle();
+            const before = await root.boundingBox();
+            await page.evaluate(async scale => {
+                const fixture = (globalThis as any).fixture;
+                fixture.workspace.getBlockById('start').setIntersects(false);
+                await fixture.zoom(scale);
+            }, 0.5);
+            assert.ok((await root.boundingBox()).width < before.width);
+            assert.equal(await root.evaluate((node, saved) => node === saved, original), true);
+            const overviewAligned = await root.evaluate(node => {
+                const svg = node.ownerSVGElement;
+                const source = node.querySelector<SVGPathElement>(':scope > .blocklyPath');
+                const path = [...document.querySelectorAll<SVGPathElement>('[data-workspace-minimap] > g > path')]
+                    .find(path => path.getAttribute('d') === source.getAttribute('d'));
+                const actual = path.transform.baseVal.consolidate().matrix;
+                const expected = svg.getScreenCTM().inverse().multiply(source.getScreenCTM());
+                return ['a', 'd', 'e', 'f'].every(key => Math.abs(actual[key] - expected[key]) < .01);
+            });
+            assert.equal(overviewAligned, true);
+            await page.evaluate(() => (globalThis as any).fixture.reload());
+            assert.equal(await root.evaluate((node, saved) => node === saved, original), false);
+            assert.deepEqual(errors, []);
+        } finally {await page.close();}
+    });
+
     test(`${layout}: incoming arrows fit between the fold gutter and the scripts at every zoom`, async () => {
         const {page, errors} = await open(layout);
         try {

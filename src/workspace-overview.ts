@@ -1,4 +1,4 @@
-import {getScriptProjection} from './script-projection.ts';
+import {getScriptProjection, type ScriptProjection} from './script-projection.ts';
 
 type OverviewOptions = {
     workspace: any;
@@ -161,16 +161,17 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     const resize = new view.ResizeObserver(schedule);
     resize.observe(container);
     const events = new view.AbortController();
-    let projectedSVG: SVGSVGElement | undefined;
+    let displayedProjection: ScriptProjection | undefined;
     function projectionChanged() {
-        const projection = getScriptProjection(workspace);
-        const next = projection?.svg;
-        if (next !== projectedSVG) {
-            projectedSVG = next;
-            needsShapes = true;
+        const next = getScriptProjection(workspace);
+        // Layout changes can reuse the SVG; scrolling keeps the same projection.
+        const changedSVG = next?.svg !== displayedProjection?.svg;
+        needsShapes ||= next !== displayedProjection;
+        displayedProjection = next;
+        if (changedSVG) {
             if (frame !== undefined) view.cancelAnimationFrame(frame);
             frame = undefined;
-            if (projection?.progressive) {
+            if (next?.progressive) {
                 map.toggleAttribute('hidden', true);
                 // The controls must not act on the previous projection while the new map is pending.
                 frame = view.requestAnimationFrame(() => {frame = view.requestAnimationFrame(render);});
