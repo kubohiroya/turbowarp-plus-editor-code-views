@@ -36,7 +36,11 @@ for (const layout of ['z', 'n'] as const) {
             const root = page.locator('[data-script-view-block="start"]');
             const original = await root.elementHandle();
             const before = await root.boundingBox();
-            await page.evaluate(scale => (globalThis as any).fixture.zoom(scale), 0.5);
+            await page.evaluate(async scale => {
+                const fixture = (globalThis as any).fixture;
+                fixture.workspace.getBlockById('start').setIntersects(false);
+                await fixture.zoom(scale);
+            }, 0.5);
             assert.ok((await root.boundingBox()).width < before.width);
             assert.equal(await root.evaluate((node, saved) => node === saved, original), true);
             const overviewAligned = await root.evaluate(node => {

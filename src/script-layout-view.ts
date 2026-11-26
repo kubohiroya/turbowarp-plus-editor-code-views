@@ -59,12 +59,24 @@ export function attachScriptView({
     let projection: ScriptProjection | undefined;
     const svg = workspace.getParentSvg();
     const canvas = workspace.getCanvas();
+    const comparisonStyle = document.createElement('div').style;
+    const withoutDisplay = (style: string | null) => {
+        comparisonStyle.cssText = style ?? '';
+        comparisonStyle.removeProperty('display');
+        return comparisonStyle.cssText;
+    };
     const observer = new window.MutationObserver(records => {
         const changes = records.filter(record => !(record.target as Element).closest?.('[data-script-relation-layer]'));
         if (!changes.length) return;
-        // Blockly applies pan and zoom to the canvas transform. The cloned block contents are still current.
-        if (changes.every(record => record.target === canvas && record.attributeName === 'transform')) schedule();
-        else update();
+        for (const {target, attributeName, oldValue} of changes) {
+            if (target === canvas && attributeName === 'transform') continue;
+            // The projection already strips display from top-level copies, including native viewport culling.
+            if (attributeName === 'style' && target.parentNode === canvas &&
+                withoutDisplay(oldValue) === withoutDisplay((target as Element).getAttribute('style'))) continue;
+            update();
+            return;
+        }
+        schedule();
     });
     const relations = relationContext && attachScriptArrows({workspace, getLocale, ...relationContext});
     const japanese = () => /^ja(?:-|$)/i.test(getLocale());
@@ -109,11 +121,15 @@ export function attachScriptView({
             const folded = isFoldedDefinition(block);
             const label = japanese() ? (folded ? '折りたたみを解除' : '折りたたむ') : (folded ? 'Unfold script' : 'Fold script');
             entry.top = y * scale;
-            entry.button.textContent = folded ? '▶' : '▼';
-            entry.button.disabled = !block || Boolean(canShowBlock && !canShowBlock());
-            entry.button.setAttribute('aria-label', label);
-            entry.button.setAttribute('aria-expanded', String(!folded));
-            entry.button.title = label;
+            const symbol = folded ? '▶' : '▼';
+            if (entry.button.textContent !== symbol) entry.button.textContent = symbol;
+            const disabled = !block || Boolean(canShowBlock && !canShowBlock());
+            if (entry.button.disabled !== disabled) entry.button.disabled = disabled;
+            if (entry.button.title !== label) {
+                entry.button.setAttribute('aria-label', label);
+                entry.button.setAttribute('aria-expanded', String(!folded));
+                entry.button.title = label;
+            }
         }
         positionFoldButtons();
     }
@@ -224,7 +240,7 @@ export function attachScriptView({
             foldButtons.clear();
         }
         else {
-            observer.observe(canvas, {attributes: true, childList: true, subtree: true});
+            observer.observe(canvas, {attributes: true, attributeOldValue: true, childList: true, subtree: true});
             surface.scrollTo(0, 0);
             update();
         }
