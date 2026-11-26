@@ -5,7 +5,7 @@ import {attachScriptViewMenu, type ScriptViewMenuBlocks, type ScriptViewMenuWork
 import type {PresentationElements} from './preview-chrome.ts';
 import {attachScriptArrows, type ScriptRelationContext, type ScriptRelationVisibility} from './script-arrows.ts';
 import {attachCodeZoomRange} from './code-zoom.ts';
-import {setScriptProjection} from './script-projection.ts';
+import {setScriptProjection, type ScriptProjection} from './script-projection.ts';
 import {openSerialScriptEditor} from './serial-script-editor.ts';
 import {openSemanticLayout, type SemanticLayoutContext} from './semantic-layout-dialog.ts';
 import {isFoldedDefinition, setFoldedDefinition} from './procedure-edits.ts';
@@ -55,9 +55,16 @@ export function attachScriptView({
     let editor: ReturnType<typeof openSerialScriptEditor>;
     let semanticDialog: ReturnType<typeof openSemanticLayout> | undefined;
     let frame: number | undefined;
+    let rebuildProjection = true;
+    let projection: ScriptProjection | undefined;
     const svg = workspace.getParentSvg();
+    const canvas = workspace.getCanvas();
     const observer = new window.MutationObserver(records => {
-        if (records.some(record => !(record.target as Element).closest?.('[data-script-relation-layer]'))) update();
+        const changes = records.filter(record => !(record.target as Element).closest?.('[data-script-relation-layer]'));
+        if (!changes.length) return;
+        // Blockly applies pan and zoom to the canvas transform. The cloned block contents are still current.
+        if (changes.every(record => record.target === canvas && record.attributeName === 'transform')) schedule();
+        else update();
     });
     const relations = relationContext && attachScriptArrows({workspace, getLocale, ...relationContext});
     const japanese = () => /^ja(?:-|$)/i.test(getLocale());
@@ -180,14 +187,20 @@ export function attachScriptView({
         const placements = arrangeScripts(scripts, view, 'vertical', Math.max(64, 48 / scale))
             // Leave room for incoming arrowheads and return paths beside the fixed fold gutter.
             .map(placement => ({...placement, x: placement.x + 40 / scale}));
-        paintScripts(contents, placements, scale);
+        const projectedSvg = paintScripts(contents, placements, scale, rebuildProjection ? undefined : projection?.svg);
+        projection = {surface, svg: projectedSvg};
+        rebuildProjection = false;
         paintFoldButtons(placements, scale);
-        const projection = contents.querySelector('svg');
-        relations?.setProjection(projection);
-        setScriptProjection(workspace, {surface, svg: projection});
+        relations?.setProjection(projectedSvg);
+        setScriptProjection(workspace, projection);
     }
 
     function update() {
+        rebuildProjection = true;
+        schedule();
+    }
+
+    function schedule() {
         if (view === 'free' || frame !== undefined) return;
         frame = window.requestAnimationFrame(render);
     }
@@ -203,6 +216,7 @@ export function attachScriptView({
         svg.toggleAttribute('data-script-serial', view !== 'free');
         labels();
         if (view === 'free') {
+            projection = undefined;
             setScriptProjection(workspace);
             relations?.setProjection(null);
             contents.replaceChildren();
@@ -210,7 +224,7 @@ export function attachScriptView({
             foldButtons.clear();
         }
         else {
-            observer.observe(workspace.getCanvas(), {attributes: true, childList: true, subtree: true});
+            observer.observe(canvas, {attributes: true, childList: true, subtree: true});
             surface.scrollTo(0, 0);
             update();
         }
@@ -248,8 +262,7 @@ export function attachScriptView({
     host.append(surface, gutter);
     surface.addEventListener('scroll', () => {
         positionFoldButtons();
-        const projection = contents.querySelector('svg');
-        if (view !== 'free' && projection) setScriptProjection(workspace, {surface, svg: projection});
+        if (view !== 'free' && projection) setScriptProjection(workspace, projection);
     }, {passive: true});
     setView(initialView);
     return {

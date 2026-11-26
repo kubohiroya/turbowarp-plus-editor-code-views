@@ -1,4 +1,4 @@
-import {getScriptProjection} from './script-projection.ts';
+import {getScriptProjection, type ScriptProjection} from './script-projection.ts';
 
 type OverviewOptions = {
     workspace: any;
@@ -161,11 +161,12 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     const resize = new view.ResizeObserver(schedule);
     resize.observe(container);
     const events = new view.AbortController();
-    let projectedSVG: SVGSVGElement | undefined;
+    let displayedProjection: ScriptProjection | undefined;
     container.addEventListener('scriptprojectionchange', () => {
-        const next = getScriptProjection(workspace)?.svg;
-        needsShapes ||= next !== projectedSVG;
-        projectedSVG = next;
+        // A layout update publishes new positions even if its SVG is reused. Scrolling keeps the same projection.
+        const next = getScriptProjection(workspace);
+        needsShapes ||= next !== displayedProjection;
+        displayedProjection = next;
         schedule();
     }, {signal: events.signal});
     view.addEventListener('resize', schedule, {signal: events.signal});

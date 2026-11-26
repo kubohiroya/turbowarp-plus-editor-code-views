@@ -74,27 +74,36 @@ export function moveScripts(workspace: LayoutWorkspace, events: LayoutEvents, pl
     events.fireNow_();
 }
 
-export function paintScripts(element: HTMLElement, placements: Placement[], scale: number) {
+export function paintScripts(element: HTMLElement, placements: Placement[], scale: number, previous?: SVGSVGElement) {
     const document = element.ownerDocument;
     const ns = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('class', 'tw-script-layout-svg');
-    svg.setAttribute('aria-hidden', 'true');
+    const copies = previous?.querySelectorAll<SVGElement>(':scope > [data-script-view-block]');
+    const reuse = copies?.length === placements.length &&
+        placements.every(({script}, index) => copies[index].dataset.scriptViewBlock === script.id);
+    const svg = reuse ? previous : document.createElementNS(ns, 'svg');
+    if (!reuse) {
+        svg.setAttribute('class', 'tw-script-layout-svg');
+        svg.setAttribute('aria-hidden', 'true');
+    }
     const width = placements.reduce((edge, {script, x}) => Math.max(edge, x + script.width), 0) + 32;
     const height = placements.reduce((edge, {script, y}) => Math.max(edge, y + script.height), 0) + 32;
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svg.setAttribute('width', String(Math.ceil(width * scale)));
     svg.setAttribute('height', String(Math.ceil(height * scale)));
-    for (const {script, x, y} of placements) {
-        const clone = script.root.cloneNode(true) as SVGElement;
-        clone.style.removeProperty('display');
-        clone.removeAttribute('id');
-        clone.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
-        clone.classList.remove('blocklySelected', 'blocklyDragging');
-        // The original block owns its fields and all native editing handlers.
-        clone.setAttribute('data-script-view-block', script.id);
-        clone.setAttribute('transform', `translate(${x + script.origin.x - script.x} ${y + script.origin.y - script.y})`);
-        svg.append(clone);
+    for (const [index, {script, x, y}] of placements.entries()) {
+        const clone = reuse ? copies[index] : script.root.cloneNode(true) as SVGElement;
+        if (!reuse) {
+            clone.style.removeProperty('display');
+            clone.removeAttribute('id');
+            clone.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+            clone.classList.remove('blocklySelected', 'blocklyDragging');
+            // The original block owns its fields and all native editing handlers.
+            clone.dataset.scriptViewBlock = script.id;
+            svg.append(clone);
+        }
+        const transform = `translate(${x + script.origin.x - script.x} ${y + script.origin.y - script.y})`;
+        if (clone.getAttribute('transform') !== transform) clone.setAttribute('transform', transform);
     }
-    element.replaceChildren(svg);
+    if (!reuse) element.replaceChildren(svg);
+    return svg;
 }
