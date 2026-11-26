@@ -46,17 +46,9 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     function refreshShapes() {
         const retained = new Set<string>();
         const additions = document.createDocumentFragment();
+        const painting: [string, string, string, string][] = [];
         const paint = (id: string, data: string, fill: string, transform: string) => {
-            retained.add(id);
-            let path = paths.get(id);
-            if (!path) {
-                path = element('path');
-                paths.set(id, path);
-                additions.append(path);
-            }
-            attribute(path, 'd', data);
-            attribute(path, 'fill', fill);
-            attribute(path, 'transform', transform);
+            painting.push([id, data, fill, transform]);
         };
         const projection = getScriptProjection(workspace);
         if (projection) {
@@ -82,6 +74,19 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
                 paint(block.id, data, source.getAttribute('fill') || block.getColour(),
                     `translate(${position.x} ${position.y})${block.RTL ? ' scale(-1 1)' : ''}`);
             }
+        }
+        // Measure every projected path before updating the live overview's cached shapes.
+        for (const [id, data, fill, transform] of painting) {
+            retained.add(id);
+            let path = paths.get(id);
+            if (!path) {
+                path = element('path');
+                paths.set(id, path);
+                additions.append(path);
+            }
+            attribute(path, 'd', data);
+            attribute(path, 'fill', fill);
+            attribute(path, 'transform', transform);
         }
         for (const [id, path] of paths) if (!retained.has(id)) {path.remove(); paths.delete(id);}
         if (additions.childNodes.length) shapes.append(additions);
