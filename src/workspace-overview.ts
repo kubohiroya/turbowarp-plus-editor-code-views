@@ -162,12 +162,24 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     resize.observe(container);
     const events = new view.AbortController();
     let projectedSVG: SVGSVGElement | undefined;
-    container.addEventListener('scriptprojectionchange', () => {
-        const next = getScriptProjection(workspace)?.svg;
-        needsShapes ||= next !== projectedSVG;
-        projectedSVG = next;
+    function projectionChanged() {
+        const projection = getScriptProjection(workspace);
+        const next = projection?.svg;
+        if (next !== projectedSVG) {
+            projectedSVG = next;
+            needsShapes = true;
+            if (frame !== undefined) view.cancelAnimationFrame(frame);
+            frame = undefined;
+            if (projection?.progressive) {
+                map.toggleAttribute('hidden', true);
+                // The controls must not act on the previous projection while the new map is pending.
+                frame = view.requestAnimationFrame(() => {frame = view.requestAnimationFrame(render);});
+                return;
+            }
+        }
         schedule();
-    }, {signal: events.signal});
+    }
+    container.addEventListener('scriptprojectionchange', projectionChanged, {signal: events.signal});
     view.addEventListener('resize', schedule, {signal: events.signal});
     view.addEventListener('scroll', schedule, {signal: events.signal, passive: true});
 
@@ -228,7 +240,7 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
         delete map.dataset.dragging;
     };
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) map.addEventListener(type, finish, {signal: events.signal});
-    schedule();
+    projectionChanged();
     return {dispose() {
         disposed = true;
         events.abort(); changes.disconnect(); scrolling.disconnect(); resize.disconnect();

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {after, before, test} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {chromium, type Browser, type Page} from '@playwright/test';
+import {chromium, expect, type Browser, type Page} from '@playwright/test';
 import {serveEditorRuntime} from '@kubohiroya/turbowarp-plus-editor-test-runtime';
 
 let server: Awaited<ReturnType<typeof serveEditorRuntime>>;
@@ -487,7 +487,7 @@ test('the integrated script view switches Z, N and free layouts without a redraw
     for (const view of ['z', 'n']) {
         await page.evaluate(value => (globalThis as any).fixture.layout(value), view);
         const serial = page.locator('.tw-script-view-surface:not([hidden])');
-        assert.equal(await serial.locator('[data-script-relation="function"]').count(), 3);
+        await expect(serial.locator('[data-script-relation="function"]')).toHaveCount(3);
         const stable = await serial.evaluate(async surface => {
             const svg = surface.querySelector('.tw-script-layout-svg');
             const first = svg?.querySelector('[data-script-relation-layer] > g');

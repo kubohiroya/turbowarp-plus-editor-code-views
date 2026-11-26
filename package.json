@@ -136,6 +136,7 @@
     "dist",
     "src",
     "tsconfig.json",
+    "scripts/build-outline-worker.mjs",
     "README.md",
     "README.ja.md",
     "LICENSE",
@@ -143,7 +144,7 @@
     "NOTICE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build-outline-worker.mjs && tsc -p tsconfig.json",
     "prepare": "npm run build",
     "test": "npm run build && node --test test/*.test.ts",
     "test:browser": "npm run build && node --test test/*.browser.ts"
@@ -167,9 +168,11 @@
     "@types/matter-js": "0.20.2",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
+    "esbuild": "0.28.2",
     "jsdom": "26.1.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "svgpath": "2.6.0",
     "typescript": "6.0.3"
   }
 }

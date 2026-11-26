@@ -182,8 +182,8 @@ export function attachScriptView({
         paintScripts(contents, placements, scale);
         paintFoldButtons(placements, scale);
         const projection = contents.querySelector('svg');
-        relations?.setProjection(projection);
-        setScriptProjection(workspace, {surface, svg: projection});
+        relations?.setProjection(projection, view === 'z');
+        setScriptProjection(workspace, {surface, svg: projection, progressive: view === 'z'});
     }
 
     function update() {
@@ -248,7 +248,7 @@ export function attachScriptView({
     surface.addEventListener('scroll', () => {
         positionFoldButtons();
         const projection = contents.querySelector('svg');
-        if (view !== 'free' && projection) setScriptProjection(workspace, {surface, svg: projection});
+        if (view !== 'free' && projection) setScriptProjection(workspace, {surface, svg: projection, progressive: view === 'z'});
     }, {passive: true});
     setView(initialView);
     return {
