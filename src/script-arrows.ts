@@ -165,6 +165,44 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         }
     }
 
+    type GuideItem = {kind: ScriptRelation['kind']; label: string; text: string; endpoint?: ScriptEndpoint};
+    function addGuideButton() {
+        const button = document.createElement('button');
+        const label = document.createTextNode('');
+        const entry = {button, label, endpoint: undefined as ScriptEndpoint | undefined};
+        button.type = 'button';
+        button.hidden = true;
+        button.append(label);
+        button.addEventListener('click', () => {if (entry.endpoint) go(entry.endpoint);});
+        destinations.append(button);
+        return entry;
+    }
+
+    // Keep the first destination slot attached before interaction. Larger lists grow the pool when needed.
+    const guideButtons = [addGuideButton()];
+    function paintGuides(items: GuideItem[]) {
+        for (const [index, item] of items.entries()) {
+            if (!guideButtons[index]) guideButtons.push(addGuideButton());
+            const entry = guideButtons[index];
+            const {button, label, endpoint} = entry;
+            if (button.ownerDocument.activeElement === button &&
+                (endpoint?.targetId !== item.endpoint?.targetId || endpoint?.blockId !== item.endpoint?.blockId)) button.blur();
+            entry.endpoint = item.endpoint;
+            if (label.data !== item.text) label.data = item.text;
+            setAttribute(button, 'aria-label', item.label);
+            setAttribute(button, 'data-script-relation', item.kind);
+            button.toggleAttribute('data-highlighted', true);
+            button.toggleAttribute('disabled', !item.endpoint);
+            button.toggleAttribute('hidden', false);
+        }
+        for (let index = items.length; index < guideButtons.length; index++) {
+            const entry = guideButtons[index];
+            entry.endpoint = undefined;
+            entry.button.toggleAttribute('hidden', true);
+        }
+        destinations.toggleAttribute('hidden', !items.length);
+    }
+
     function anchor(endpoint: ScriptEndpoint, target: RelationTarget, roots: Map<string, SVGElement>, inverse: DOMMatrix): Anchor | undefined {
         if (endpoint.targetId !== target.id) return;
         const top = blockRoot(endpoint.scriptId, roots);
@@ -350,7 +388,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         if (!reuseAnchors) measuredAnchors = new Map();
         const paint: SVGElement[] = [];
         const paintArrows: (() => void)[] = [];
-        const guides = document.createDocumentFragment();
+        const guides: GuideItem[] = [];
         const previousGroups = renderedGroups.get(drawingLayer);
         const nextGroups = new Map<string, SVGGElement>();
         if (getRelations) graph = getRelations();
@@ -448,22 +486,14 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             const {relation, source, destination, count} = drawing;
             const highlighted = dragging ? incident(relation) :
                 emphasized && (emphasized === relation.source.scriptId || emphasized === relation.destination?.scriptId);
-            let external: HTMLButtonElement | undefined;
             if ((!source || !destination) && highlighted) {
-                external = document.createElement('button');
-                external.type = 'button';
-                external.dataset.scriptRelation = relation.kind;
                 const endpoint = source ? relation.destination : relation.source;
                 const name = endpoint && (getTargetName?.(endpoint.targetId) ??
                     vm?.runtime?.targets?.find(item => item.id === endpoint.targetId)?.getName?.());
                 const reason = relation.unresolved && strings[relation.unresolved];
-                external.textContent = `${name ? `${name} · ` : ''}` +
+                const description = `${name ? `${name} · ` : ''}` +
                     `${relation.label}${reason ? ` · ${reason}` : ''}${count > 1 ? ` ×${count}` : ''}`;
-                external.disabled = !endpoint;
-                external.setAttribute('aria-label', `${strings[relation.kind]}: ${external.textContent}`);
-                external.toggleAttribute('data-highlighted', Boolean(highlighted));
-                if (endpoint) external.addEventListener('click', () => go(endpoint));
-                guides.append(external);
+                guides.push({kind: relation.kind, endpoint, label: `${strings[relation.kind]}: ${description}`, text: description});
             }
             const arrow = prepareArrow(drawing, matrix, inverse, area, Boolean(highlighted), previousGroups?.get(key));
             const group = arrow.group;
@@ -487,16 +517,14 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         }
         renderedGroups.set(drawingLayer, nextGroups);
         destinations.style.top = `${guideTop}px`;
-        destinations.replaceChildren(guides);
-        destinations.hidden = !destinations.childElementCount;
+        paintGuides(guides);
         markScripts(marked);
     }
 
     function clear() {
         if (layer.childElementCount) layer.replaceChildren();
         if (projectedLayer?.childElementCount) projectedLayer.replaceChildren();
-        if (destinations.childElementCount) destinations.replaceChildren();
-        destinations.hidden = true;
+        paintGuides([]);
         edgeDrawings = [];
         viewportDrawings = [];
         measuredAnchors.clear();
