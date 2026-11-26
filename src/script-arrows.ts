@@ -165,6 +165,45 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         }
     }
 
+    type GuideItem = {kind: ScriptRelation['kind']; label: string; text: string; endpoint?: ScriptEndpoint};
+    function addGuideButton() {
+        const button = document.createElement('button');
+        const label = document.createTextNode('');
+        const entry = {button, label, endpoint: undefined as ScriptEndpoint | undefined};
+        button.type = 'button';
+        button.hidden = true;
+        button.append(label);
+        button.addEventListener('click', () => {if (entry.endpoint) go(entry.endpoint);});
+        destinations.append(button);
+        return entry;
+    }
+
+    // Keep the first destination slot attached before interaction. Larger lists grow the pool when needed.
+    const guideButtons = [addGuideButton()];
+    function paintGuides(items: GuideItem[]) {
+        for (const [index, item] of items.entries()) {
+            if (!guideButtons[index]) guideButtons.push(addGuideButton());
+            const entry = guideButtons[index];
+            const {button, label, endpoint} = entry;
+            if (button.ownerDocument.activeElement === button &&
+                (endpoint?.targetId !== item.endpoint?.targetId || endpoint?.blockId !== item.endpoint?.blockId)) button.blur();
+            entry.endpoint = item.endpoint;
+            if (label.data !== item.text) label.data = item.text;
+            setAttribute(button, 'aria-label', item.label);
+            setAttribute(button, 'data-script-relation', item.kind);
+            button.toggleAttribute('data-highlighted', true);
+            button.toggleAttribute('disabled', !item.endpoint);
+            button.toggleAttribute('hidden', false);
+        }
+        for (let index = items.length; index < guideButtons.length; index++) {
+            const entry = guideButtons[index];
+            entry.endpoint = undefined;
+            entry.button.removeAttribute('data-highlighted');
+            entry.button.toggleAttribute('hidden', true);
+        }
+        destinations.toggleAttribute('hidden', !items.length);
+    }
+
     function anchor(endpoint: ScriptEndpoint, target: RelationTarget, roots: Map<string, SVGElement>, inverse: DOMMatrix): Anchor | undefined {
         if (endpoint.targetId !== target.id) return;
         const top = blockRoot(endpoint.scriptId, roots);
@@ -251,38 +290,44 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         return {path, head, recursive, badgePoint};
     }
 
-    function drawArrow(drawing: Drawing, matrix: DOMMatrix, inverse: DOMMatrix, area: DOMRect, highlighted: boolean) {
+    function setAttribute(node: Element | null, name: string, value: string | number) {
+        const text = String(value);
+        if (node && node.getAttribute(name) !== text) node.setAttribute(name, text);
+    }
+
+    function prepareArrow(drawing: Drawing, matrix: DOMMatrix, inverse: DOMMatrix, area: DOMRect, highlighted: boolean,
+        previous?: SVGGElement) {
         const {relation, source, destination, count} = drawing;
         const {path, head, recursive, badgePoint} = arrowGeometry(drawing, matrix, inverse, area, highlighted);
         const strings = text();
-        const group = element('g', {
-            'data-script-relation': relation.kind,
-            'data-source-block': source?.id ?? relation.source.blockId,
-            'data-source-call': relation.source.blockId,
-            'data-destination-block': destination?.id ?? relation.destination?.blockId ?? '',
-            'data-count': String(count),
-            'data-wait': String(relation.wait)
-        });
-        group.toggleAttribute('data-highlighted', Boolean(highlighted));
-        group.toggleAttribute('data-recursive', Boolean(recursive));
-        group.toggleAttribute('data-script-external', !source || !destination);
-        const description = element('title');
         const waiting = relation.kind === 'message' && relation.wait;
-        description.textContent = `${strings[relation.kind]}: ${relation.label}${waiting ? ` · ${strings.wait}` : ''}`;
-        group.append(description, element('path', {
-            class: 'tw-script-relation-line',
-            d: path
-        }), element('path', {
-            class: 'tw-script-relation-head',
-            d: head
-        }));
-        if (count > 1) {
-            const badge = element('text', {x: String(badgePoint.x), y: String(badgePoint.y),
-                class: 'tw-script-relation-badge', 'text-anchor': 'middle'});
-            badge.textContent = `×${count}`;
-            group.append(badge);
-        }
-        return group;
+        const label = `${strings[relation.kind]}: ${relation.label}${waiting ? ` · ${strings.wait}` : ''}`;
+        const group = previous ?? element('g');
+        if (!previous) group.append(element('title'), element('path', {class: 'tw-script-relation-line'}),
+            element('path', {class: 'tw-script-relation-head'}));
+        return {group, paint() {
+            setAttribute(group, 'data-script-relation', relation.kind);
+            setAttribute(group, 'data-source-block', source?.id ?? relation.source.blockId);
+            setAttribute(group, 'data-source-call', relation.source.blockId);
+            setAttribute(group, 'data-destination-block', destination?.id ?? relation.destination?.blockId ?? '');
+            setAttribute(group, 'data-count', count);
+            setAttribute(group, 'data-wait', String(relation.wait));
+            group.toggleAttribute('data-highlighted', highlighted);
+            group.toggleAttribute('data-recursive', Boolean(recursive));
+            group.toggleAttribute('data-script-external', !source || !destination);
+            const [description, line, arrowhead] = Array.from(group.children);
+            if (description.textContent !== label) description.textContent = label;
+            setAttribute(line, 'd', path);
+            setAttribute(arrowhead, 'd', head);
+            const currentBadge = group.children[3];
+            if (count > 1) {
+                const badge = currentBadge ?? element('text', {class: 'tw-script-relation-badge', 'text-anchor': 'middle'});
+                setAttribute(badge, 'x', badgePoint.x);
+                setAttribute(badge, 'y', badgePoint.y);
+                if (badge.textContent !== `×${count}`) badge.textContent = `×${count}`;
+                if (!currentBadge) group.append(badge);
+            } else currentBadge?.remove();
+        }};
     }
 
     function inViewport({source, destination}: Drawing, matrix: DOMMatrix, area: DOMRect) {
@@ -328,13 +373,11 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 shape: arrowGeometry(item.drawing, matrix, inverse, area, item.highlighted)}));
             syncTransform(matrix);
             for (const {group, shape} of geometry) {
-                const set = (node: Element | null, name: string, value: string | number) => {
-                    if (node && node.getAttribute(name) !== String(value)) node.setAttribute(name, String(value));
-                };
-                set(group.querySelector('.tw-script-relation-line'), 'd', shape.path);
-                set(group.querySelector('.tw-script-relation-head'), 'd', shape.head);
+                setAttribute(group.querySelector('.tw-script-relation-line'), 'd', shape.path);
+                setAttribute(group.querySelector('.tw-script-relation-head'), 'd', shape.head);
                 const count = group.querySelector('.tw-script-relation-badge');
-                set(count, 'x', shape.badgePoint.x); set(count, 'y', shape.badgePoint.y);
+                setAttribute(count, 'x', shape.badgePoint.x);
+                setAttribute(count, 'y', shape.badgePoint.y);
             }
             lastMatrix = matrix;
             return;
@@ -345,7 +388,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         viewportDrawings = [];
         if (!reuseAnchors) measuredAnchors = new Map();
         const paint: SVGElement[] = [];
-        const guides = document.createDocumentFragment();
+        const paintArrows: (() => void)[] = [];
+        const guides: GuideItem[] = [];
         const previousGroups = renderedGroups.get(drawingLayer);
         const nextGroups = new Map<string, SVGGElement>();
         if (getRelations) graph = getRelations();
@@ -443,31 +487,25 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             const {relation, source, destination, count} = drawing;
             const highlighted = dragging ? incident(relation) :
                 emphasized && (emphasized === relation.source.scriptId || emphasized === relation.destination?.scriptId);
-            let external: HTMLButtonElement | undefined;
             if ((!source || !destination) && highlighted) {
-                external = document.createElement('button');
-                external.type = 'button';
-                external.dataset.scriptRelation = relation.kind;
                 const endpoint = source ? relation.destination : relation.source;
                 const name = endpoint && (getTargetName?.(endpoint.targetId) ??
                     vm?.runtime?.targets?.find(item => item.id === endpoint.targetId)?.getName?.());
                 const reason = relation.unresolved && strings[relation.unresolved];
-                external.textContent = `${name ? `${name} · ` : ''}` +
+                const description = `${name ? `${name} · ` : ''}` +
                     `${relation.label}${reason ? ` · ${reason}` : ''}${count > 1 ? ` ×${count}` : ''}`;
-                external.disabled = !endpoint;
-                external.setAttribute('aria-label', `${strings[relation.kind]}: ${external.textContent}`);
-                external.toggleAttribute('data-highlighted', Boolean(highlighted));
-                if (endpoint) external.addEventListener('click', () => go(endpoint));
-                guides.append(external);
+                guides.push({kind: relation.kind, endpoint, label: `${strings[relation.kind]}: ${description}`, text: description});
             }
-            let group = drawArrow(drawing, matrix, inverse, area, Boolean(highlighted));
-            const previous = previousGroups?.get(key);
-            if (previous?.isEqualNode(group)) group = previous;
+            const arrow = prepareArrow(drawing, matrix, inverse, area, Boolean(highlighted), previousGroups?.get(key));
+            const group = arrow.group;
+            paintArrows.push(arrow.paint);
             nextGroups.set(key, group);
             if (!source || !destination) edgeDrawings.push({key, drawing, group, highlighted: Boolean(highlighted)});
             paint.push(group);
         }
         syncTransform(matrix);
+        // Keep attached groups in place while updating their paths and highlights after all geometry reads.
+        for (const paintArrow of paintArrows) paintArrow();
         layer.style.display = projection ? 'none' : '';
         drawingLayer.toggleAttribute('data-script-dragging', Boolean(dragging));
         // Keep unchanged lines in place, including when an unrelated script was edited or dragged.
@@ -480,16 +518,14 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         }
         renderedGroups.set(drawingLayer, nextGroups);
         destinations.style.top = `${guideTop}px`;
-        destinations.replaceChildren(guides);
-        destinations.hidden = !destinations.childElementCount;
+        paintGuides(guides);
         markScripts(marked);
     }
 
     function clear() {
         if (layer.childElementCount) layer.replaceChildren();
         if (projectedLayer?.childElementCount) projectedLayer.replaceChildren();
-        if (destinations.childElementCount) destinations.replaceChildren();
-        destinations.hidden = true;
+        paintGuides([]);
         edgeDrawings = [];
         viewportDrawings = [];
         measuredAnchors.clear();

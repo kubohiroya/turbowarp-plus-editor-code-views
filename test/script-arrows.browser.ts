@@ -438,6 +438,11 @@ test('keyboard input on a destination button cannot delete or undo the selected 
     });
     await activateScript(page, 'start');
     const destination = page.getByRole('button', {name: /Secondary.*go/}).first();
+    const original = await destination.elementHandle();
+    await activateScript(page, 'unrelated');
+    assert.equal(await destination.count(), 0);
+    await activateScript(page, 'start');
+    assert.equal(await destination.evaluate((node, saved) => node === saved, original), true);
     for (const key of ['Delete', 'Backspace', 'Control+z']) {
         await destination.press(key);
         assert.equal(await page.evaluate(() => Boolean((globalThis as any).fixture.workspace.getBlockById('call-1'))), true,

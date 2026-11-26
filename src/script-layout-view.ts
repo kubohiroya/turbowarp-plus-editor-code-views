@@ -5,7 +5,7 @@ import {attachScriptViewMenu, type ScriptViewMenuBlocks, type ScriptViewMenuWork
 import type {PresentationElements} from './preview-chrome.ts';
 import {attachScriptArrows, type ScriptRelationContext, type ScriptRelationVisibility} from './script-arrows.ts';
 import {attachCodeZoomRange} from './code-zoom.ts';
-import {setScriptProjection} from './script-projection.ts';
+import {setScriptProjection, type ScriptProjection} from './script-projection.ts';
 import {openSerialScriptEditor} from './serial-script-editor.ts';
 import {openSemanticLayout, type SemanticLayoutContext} from './semantic-layout-dialog.ts';
 import {isFoldedDefinition, setFoldedDefinition} from './procedure-edits.ts';
@@ -55,9 +55,28 @@ export function attachScriptView({
     let editor: ReturnType<typeof openSerialScriptEditor>;
     let semanticDialog: ReturnType<typeof openSemanticLayout> | undefined;
     let frame: number | undefined;
+    let rebuildProjection = true;
+    let projection: ScriptProjection | undefined;
     const svg = workspace.getParentSvg();
+    const canvas = workspace.getCanvas();
+    const comparisonStyle = document.createElement('div').style;
+    const withoutDisplay = (style: string | null) => {
+        comparisonStyle.cssText = style ?? '';
+        comparisonStyle.removeProperty('display');
+        return comparisonStyle.cssText;
+    };
     const observer = new window.MutationObserver(records => {
-        if (records.some(record => !(record.target as Element).closest?.('[data-script-relation-layer]'))) update();
+        const changes = records.filter(record => !(record.target as Element).closest?.('[data-script-relation-layer]'));
+        if (!changes.length) return;
+        for (const {target, attributeName, oldValue} of changes) {
+            if (target === canvas && attributeName === 'transform') continue;
+            // The projection already strips display from top-level copies, including native viewport culling.
+            if (attributeName === 'style' && target.parentNode === canvas &&
+                withoutDisplay(oldValue) === withoutDisplay((target as Element).getAttribute('style'))) continue;
+            update();
+            return;
+        }
+        schedule();
     });
     const relations = relationContext && attachScriptArrows({workspace, getLocale, ...relationContext});
     const japanese = () => /^ja(?:-|$)/i.test(getLocale());
@@ -75,10 +94,11 @@ export function attachScriptView({
     }
 
     function positionFoldButtons() {
-        gutter.style.left = `${surface.offsetLeft}px`;
-        gutter.style.top = `${surface.offsetTop}px`;
-        gutter.style.height = `${surface.clientHeight}px`;
-        for (const {button, top} of foldButtons.values()) button.style.top = `${top - surface.scrollTop}px`;
+        const {offsetLeft, offsetTop, clientHeight, scrollTop} = surface;
+        gutter.style.left = `${offsetLeft}px`;
+        gutter.style.top = `${offsetTop}px`;
+        gutter.style.height = `${clientHeight}px`;
+        for (const {button, top} of foldButtons.values()) button.style.top = `${top - scrollTop}px`;
     }
 
     function paintFoldButtons(placements: ReturnType<typeof arrangeScripts>, scale: number) {
@@ -101,11 +121,15 @@ export function attachScriptView({
             const folded = isFoldedDefinition(block);
             const label = japanese() ? (folded ? '折りたたみを解除' : '折りたたむ') : (folded ? 'Unfold script' : 'Fold script');
             entry.top = y * scale;
-            entry.button.textContent = folded ? '▶' : '▼';
-            entry.button.disabled = !block || Boolean(canShowBlock && !canShowBlock());
-            entry.button.setAttribute('aria-label', label);
-            entry.button.setAttribute('aria-expanded', String(!folded));
-            entry.button.title = label;
+            const symbol = folded ? '▶' : '▼';
+            if (entry.button.textContent !== symbol) entry.button.textContent = symbol;
+            const disabled = !block || Boolean(canShowBlock && !canShowBlock());
+            if (entry.button.disabled !== disabled) entry.button.disabled = disabled;
+            if (entry.button.title !== label) {
+                entry.button.setAttribute('aria-label', label);
+                entry.button.setAttribute('aria-expanded', String(!folded));
+                entry.button.title = label;
+            }
         }
         positionFoldButtons();
     }
@@ -179,14 +203,20 @@ export function attachScriptView({
         const placements = arrangeScripts(scripts, view, 'vertical', Math.max(64, 48 / scale))
             // Leave room for incoming arrowheads and return paths beside the fixed fold gutter.
             .map(placement => ({...placement, x: placement.x + 40 / scale}));
-        paintScripts(contents, placements, scale);
+        const projectedSvg = paintScripts(contents, placements, scale, rebuildProjection ? undefined : projection?.svg);
+        projection = {surface, svg: projectedSvg};
+        rebuildProjection = false;
         paintFoldButtons(placements, scale);
-        const projection = contents.querySelector('svg');
-        relations?.setProjection(projection);
-        setScriptProjection(workspace, {surface, svg: projection});
+        relations?.setProjection(projectedSvg);
+        setScriptProjection(workspace, projection);
     }
 
     function update() {
+        rebuildProjection = true;
+        schedule();
+    }
+
+    function schedule() {
         if (view === 'free' || frame !== undefined) return;
         frame = window.requestAnimationFrame(render);
     }
@@ -202,6 +232,7 @@ export function attachScriptView({
         svg.toggleAttribute('data-script-serial', view !== 'free');
         labels();
         if (view === 'free') {
+            projection = undefined;
             setScriptProjection(workspace);
             relations?.setProjection(null);
             contents.replaceChildren();
@@ -209,7 +240,7 @@ export function attachScriptView({
             foldButtons.clear();
         }
         else {
-            observer.observe(workspace.getCanvas(), {attributes: true, childList: true, subtree: true});
+            observer.observe(canvas, {attributes: true, attributeOldValue: true, childList: true, subtree: true});
             surface.scrollTo(0, 0);
             update();
         }
@@ -247,8 +278,7 @@ export function attachScriptView({
     host.append(surface, gutter);
     surface.addEventListener('scroll', () => {
         positionFoldButtons();
-        const projection = contents.querySelector('svg');
-        if (view !== 'free' && projection) setScriptProjection(workspace, {surface, svg: projection});
+        if (view !== 'free' && projection) setScriptProjection(workspace, projection);
     }, {passive: true});
     setView(initialView);
     return {
