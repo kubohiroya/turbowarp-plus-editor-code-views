@@ -251,38 +251,44 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         return {path, head, recursive, badgePoint};
     }
 
-    function drawArrow(drawing: Drawing, matrix: DOMMatrix, inverse: DOMMatrix, area: DOMRect, highlighted: boolean) {
+    function setAttribute(node: Element | null, name: string, value: string | number) {
+        const text = String(value);
+        if (node && node.getAttribute(name) !== text) node.setAttribute(name, text);
+    }
+
+    function prepareArrow(drawing: Drawing, matrix: DOMMatrix, inverse: DOMMatrix, area: DOMRect, highlighted: boolean,
+        previous?: SVGGElement) {
         const {relation, source, destination, count} = drawing;
         const {path, head, recursive, badgePoint} = arrowGeometry(drawing, matrix, inverse, area, highlighted);
         const strings = text();
-        const group = element('g', {
-            'data-script-relation': relation.kind,
-            'data-source-block': source?.id ?? relation.source.blockId,
-            'data-source-call': relation.source.blockId,
-            'data-destination-block': destination?.id ?? relation.destination?.blockId ?? '',
-            'data-count': String(count),
-            'data-wait': String(relation.wait)
-        });
-        group.toggleAttribute('data-highlighted', Boolean(highlighted));
-        group.toggleAttribute('data-recursive', Boolean(recursive));
-        group.toggleAttribute('data-script-external', !source || !destination);
-        const description = element('title');
         const waiting = relation.kind === 'message' && relation.wait;
-        description.textContent = `${strings[relation.kind]}: ${relation.label}${waiting ? ` · ${strings.wait}` : ''}`;
-        group.append(description, element('path', {
-            class: 'tw-script-relation-line',
-            d: path
-        }), element('path', {
-            class: 'tw-script-relation-head',
-            d: head
-        }));
-        if (count > 1) {
-            const badge = element('text', {x: String(badgePoint.x), y: String(badgePoint.y),
-                class: 'tw-script-relation-badge', 'text-anchor': 'middle'});
-            badge.textContent = `×${count}`;
-            group.append(badge);
-        }
-        return group;
+        const label = `${strings[relation.kind]}: ${relation.label}${waiting ? ` · ${strings.wait}` : ''}`;
+        const group = previous ?? element('g');
+        if (!previous) group.append(element('title'), element('path', {class: 'tw-script-relation-line'}),
+            element('path', {class: 'tw-script-relation-head'}));
+        return {group, paint() {
+            setAttribute(group, 'data-script-relation', relation.kind);
+            setAttribute(group, 'data-source-block', source?.id ?? relation.source.blockId);
+            setAttribute(group, 'data-source-call', relation.source.blockId);
+            setAttribute(group, 'data-destination-block', destination?.id ?? relation.destination?.blockId ?? '');
+            setAttribute(group, 'data-count', count);
+            setAttribute(group, 'data-wait', String(relation.wait));
+            group.toggleAttribute('data-highlighted', highlighted);
+            group.toggleAttribute('data-recursive', Boolean(recursive));
+            group.toggleAttribute('data-script-external', !source || !destination);
+            const [description, line, arrowhead] = Array.from(group.children);
+            if (description.textContent !== label) description.textContent = label;
+            setAttribute(line, 'd', path);
+            setAttribute(arrowhead, 'd', head);
+            const currentBadge = group.children[3];
+            if (count > 1) {
+                const badge = currentBadge ?? element('text', {class: 'tw-script-relation-badge', 'text-anchor': 'middle'});
+                setAttribute(badge, 'x', badgePoint.x);
+                setAttribute(badge, 'y', badgePoint.y);
+                if (badge.textContent !== `×${count}`) badge.textContent = `×${count}`;
+                if (!currentBadge) group.append(badge);
+            } else currentBadge?.remove();
+        }};
     }
 
     function inViewport({source, destination}: Drawing, matrix: DOMMatrix, area: DOMRect) {
@@ -328,13 +334,11 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 shape: arrowGeometry(item.drawing, matrix, inverse, area, item.highlighted)}));
             syncTransform(matrix);
             for (const {group, shape} of geometry) {
-                const set = (node: Element | null, name: string, value: string | number) => {
-                    if (node && node.getAttribute(name) !== String(value)) node.setAttribute(name, String(value));
-                };
-                set(group.querySelector('.tw-script-relation-line'), 'd', shape.path);
-                set(group.querySelector('.tw-script-relation-head'), 'd', shape.head);
+                setAttribute(group.querySelector('.tw-script-relation-line'), 'd', shape.path);
+                setAttribute(group.querySelector('.tw-script-relation-head'), 'd', shape.head);
                 const count = group.querySelector('.tw-script-relation-badge');
-                set(count, 'x', shape.badgePoint.x); set(count, 'y', shape.badgePoint.y);
+                setAttribute(count, 'x', shape.badgePoint.x);
+                setAttribute(count, 'y', shape.badgePoint.y);
             }
             lastMatrix = matrix;
             return;
@@ -345,6 +349,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         viewportDrawings = [];
         if (!reuseAnchors) measuredAnchors = new Map();
         const paint: SVGElement[] = [];
+        const paintArrows: (() => void)[] = [];
         const guides = document.createDocumentFragment();
         const previousGroups = renderedGroups.get(drawingLayer);
         const nextGroups = new Map<string, SVGGElement>();
@@ -460,14 +465,16 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 if (endpoint) external.addEventListener('click', () => go(endpoint));
                 guides.append(external);
             }
-            let group = drawArrow(drawing, matrix, inverse, area, Boolean(highlighted));
-            const previous = previousGroups?.get(key);
-            if (previous?.isEqualNode(group)) group = previous;
+            const arrow = prepareArrow(drawing, matrix, inverse, area, Boolean(highlighted), previousGroups?.get(key));
+            const group = arrow.group;
+            paintArrows.push(arrow.paint);
             nextGroups.set(key, group);
             if (!source || !destination) edgeDrawings.push({key, drawing, group, highlighted: Boolean(highlighted)});
             paint.push(group);
         }
         syncTransform(matrix);
+        // Keep attached groups in place while updating their paths and highlights after all geometry reads.
+        for (const paintArrow of paintArrows) paintArrow();
         layer.style.display = projection ? 'none' : '';
         drawingLayer.toggleAttribute('data-script-dragging', Boolean(dragging));
         // Keep unchanged lines in place, including when an unrelated script was edited or dragged.

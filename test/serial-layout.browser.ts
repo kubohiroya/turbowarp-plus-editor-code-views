@@ -30,6 +30,24 @@ const open = async (layout: 'z' | 'n', locale = 'en') => {
 };
 
 for (const layout of ['z', 'n'] as const) {
+    test(`${layout}: highlighting and zoom update the existing arrow elements`, async () => {
+        const {page, errors} = await open(layout);
+        try {
+            const surface = page.locator('.tw-script-view-surface');
+            const arrow = surface.locator('[data-source-call="call-1"]');
+            const line = arrow.locator('.tw-script-relation-line');
+            const original = await line.elementHandle();
+            const path = await line.getAttribute('d');
+            await surface.locator('[data-id="call-1"] > .blocklyPath').first().hover();
+            await expect(arrow).toHaveAttribute('data-highlighted', '');
+            assert.equal(await line.evaluate((node, saved) => node === saved, original), true);
+            await page.evaluate(scale => (globalThis as any).fixture.zoom(scale), 0.5);
+            assert.notEqual(await line.getAttribute('d'), path);
+            assert.equal(await line.evaluate((node, saved) => node === saved, original), true);
+            assert.deepEqual(errors, []);
+        } finally {await page.close();}
+    });
+
     test(`${layout}: zoom reuses projected blocks and a source edit refreshes them`, async () => {
         const {page, errors} = await open(layout);
         try {
