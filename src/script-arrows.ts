@@ -1,3 +1,4 @@
+import {outlinePoint} from './script-outline.ts';
 import {isFoldedDefinition} from './procedure-edits.ts';
 import {readScriptRelations, type RelationTarget, type ScriptEndpoint, type ScriptRelation} from './script-relations.ts';
 
@@ -44,56 +45,6 @@ function roundedRoute(points: Point[], radii: readonly number[]) {
     return `${path} L ${end.x} ${end.y}`;
 }
 const ns = 'http://www.w3.org/2000/svg';
-type Outline = {points: (Point & {distance: number})[]; cuts: Map<string, Point>};
-const outlines = new Map<string, Outline>();
-
-/** Intersect the actual outline, including a hat's overhang, rather than Blockly's layout padding. */
-function outlinePoint(shape: SVGGeometryElement, bounds: Box, side: 'left' | 'right', fraction: number): Point {
-    const data = shape.getAttribute('d') ?? '';
-    let outline = outlines.get(data);
-    if (!outline) {
-        const length = shape.getTotalLength();
-        const count = Math.max(24, Math.min(96, Math.ceil(length / 8)));
-        const points = Array.from({length: count + 1}, (_, index) => {
-            const distance = length * index / count;
-            const point = shape.getPointAtLength(distance);
-            return {x: point.x, y: point.y, distance};
-        });
-        outline = {points, cuts: new Map()};
-        if (outlines.size >= 512) outlines.delete(outlines.keys().next().value);
-        outlines.set(data, outline);
-    }
-    const y = bounds.y + bounds.height * fraction;
-    const key = `${side}:${y}`;
-    const cached = outline.cuts.get(key);
-    if (cached) return cached;
-    let edge: number | undefined;
-    for (let index = 1; index < outline.points.length; index++) {
-        const before = outline.points[index - 1];
-        const after = outline.points[index];
-        if ((before.y <= y && after.y >= y) || (before.y >= y && after.y <= y)) {
-            let x: number;
-            if (before.y === after.y) x = side === 'left' ? Math.min(before.x, after.x) : Math.max(before.x, after.x);
-            else {
-                // Refine only a crossing instead of sampling every two units along the entire outline.
-                let low = before.distance, high = after.distance;
-                for (let step = 0; step < 12; step++) {
-                    const middle = (low + high) / 2;
-                    const point = shape.getPointAtLength(middle);
-                    x = point.x;
-                    if (Math.abs(point.y - y) < .001) break;
-                    if ((point.y < y) === (before.y < y)) low = middle;
-                    else high = middle;
-                }
-            }
-            edge = edge === undefined ? x : side === 'left' ? Math.min(edge, x) : Math.max(edge, x);
-        }
-    }
-    const point = {x: edge ?? bounds.x + (side === 'right' ? bounds.width : 0), y};
-    outline.cuts.set(key, point);
-    return point;
-}
-
 // The shared workspace owns navigation even when an arrow is in a read-only preview.
 const navigators = new WeakMap<object, (endpoint: ScriptEndpoint) => void>();
 export function registerScriptRelationNavigation(vm: object, navigate: (endpoint: ScriptEndpoint) => void) {

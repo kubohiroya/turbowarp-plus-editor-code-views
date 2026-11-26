@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-plus-editor-code-views",
-  "version": "0.26.6",
+  "version": "0.26.7",
   "description": "Code views for TurboWarp Plus Editor: code in tabs and windows, the detached block palette, script layout and block field editing",
   "type": "module",
   "license": "MPL-2.0",
@@ -139,7 +139,8 @@
     "README.md",
     "README.ja.md",
     "LICENSE",
-    "EDITOR-MIGRATION.md"
+    "EDITOR-MIGRATION.md",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -149,7 +150,8 @@
   },
   "dependencies": {
     "@kubohiroya/turbowarp-script-transfer": "0.1.5",
-    "matter-js": "0.20.0"
+    "matter-js": "0.20.0",
+    "svg-path-properties": "1.3.0"
   },
   "peerDependencies": {
     "@kubohiroya/turbowarp-extension-security-dialog": ">=0.9.0 <0.10.0 || 0.10.0 || 0.13.0 || 0.13.1 || 0.14.2",
