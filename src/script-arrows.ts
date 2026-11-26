@@ -198,6 +198,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         for (let index = items.length; index < guideButtons.length; index++) {
             const entry = guideButtons[index];
             entry.endpoint = undefined;
+            entry.button.removeAttribute('data-highlighted');
             entry.button.toggleAttribute('hidden', true);
         }
         destinations.toggleAttribute('hidden', !items.length);
