@@ -38,7 +38,7 @@ for (const layout of ['z', 'n'] as const) {
             const line = arrow.locator('.tw-script-relation-line');
             const original = await line.elementHandle();
             const path = await line.getAttribute('d');
-            await surface.locator('[data-id="call-1"] > .blocklyPath').first().hover();
+            await surface.locator('[data-id="call-1"]').hover();
             await expect(arrow).toHaveAttribute('data-highlighted', '');
             assert.equal(await line.evaluate((node, saved) => node === saved, original), true);
             await page.evaluate(scale => (globalThis as any).fixture.zoom(scale), 0.5);
