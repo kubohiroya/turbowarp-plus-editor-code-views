@@ -50,7 +50,9 @@ export function attachScriptView({
     const gutter = document.createElement('div');
     gutter.className = 'tw-script-fold-gutter';
     gutter.dataset.codeViewControl = '';
-    const foldButtons = new Map<string, {button: HTMLButtonElement; top: number}>();
+    const foldStrip = document.createElement('div');
+    gutter.append(foldStrip);
+    const foldButtons = new Map<string, HTMLButtonElement>();
     let view = initialView;
     let editor: ReturnType<typeof openSerialScriptEditor>;
     let semanticDialog: ReturnType<typeof openSemanticLayout> | undefined;
@@ -93,45 +95,36 @@ export function attachScriptView({
         update();
     }
 
-    function positionFoldButtons() {
-        const {offsetLeft, offsetTop, clientHeight, scrollTop} = surface;
-        gutter.style.left = `${offsetLeft}px`;
-        gutter.style.top = `${offsetTop}px`;
-        gutter.style.height = `${clientHeight}px`;
-        for (const {button, top} of foldButtons.values()) button.style.top = `${top - scrollTop}px`;
-    }
-
     function paintFoldButtons(placements: ReturnType<typeof arrangeScripts>, scale: number) {
         const target = relationContext?.getTarget();
         const ids = new Set(placements.map(({script}) => script.id));
-        for (const [id, {button}] of foldButtons) if (!ids.has(id)) {button.remove(); foldButtons.delete(id);}
+        for (const [id, button] of foldButtons) if (!ids.has(id)) {button.remove(); foldButtons.delete(id);}
         for (const {script, y} of placements) {
-            let entry = foldButtons.get(script.id);
-            if (!entry) {
-                const button = document.createElement('button');
+            let button = foldButtons.get(script.id);
+            if (!button) {
+                button = document.createElement('button');
                 button.type = 'button';
                 button.dataset.scriptFoldToggle = script.id;
                 button.addEventListener('click', event => {event.stopPropagation(); setFold([script.id]);});
                 button.addEventListener('pointerdown', event => event.stopPropagation());
-                entry = {button, top: 0};
-                foldButtons.set(script.id, entry);
-                gutter.append(button);
+                foldButtons.set(script.id, button);
+                foldStrip.append(button);
             }
             const block = target?.blocks._blocks[script.id];
             const folded = isFoldedDefinition(block);
             const label = japanese() ? (folded ? '折りたたみを解除' : '折りたたむ') : (folded ? 'Unfold script' : 'Fold script');
-            entry.top = y * scale;
+            const top = `${y * scale}px`;
+            if (button.style.top !== top) button.style.top = top;
             const symbol = folded ? '▶' : '▼';
-            if (entry.button.textContent !== symbol) entry.button.textContent = symbol;
+            if (button.textContent !== symbol) button.textContent = symbol;
             const disabled = !block || Boolean(canShowBlock && !canShowBlock());
-            if (entry.button.disabled !== disabled) entry.button.disabled = disabled;
-            if (entry.button.title !== label) {
-                entry.button.setAttribute('aria-label', label);
-                entry.button.setAttribute('aria-expanded', String(!folded));
-                entry.button.title = label;
+            if (button.disabled !== disabled) button.disabled = disabled;
+            if (button.title !== label) {
+                button.setAttribute('aria-label', label);
+                button.setAttribute('aria-expanded', String(!folded));
+                button.title = label;
             }
         }
-        positionFoldButtons();
     }
 
     function foldOptions() {
@@ -186,13 +179,8 @@ export function attachScriptView({
         if (view === 'free') return;
         const {left, right, top} = svg.getBoundingClientRect();
         const toolbox = injection.querySelector(':scope > .blocklyToolboxDiv');
-        if (toolbox) {
-            const bounds = toolbox.getBoundingClientRect();
-            const horizontal = toolbox.hasAttribute('data-horizontal-block-palette');
-            surface.style.setProperty('--tw-script-view-top', horizontal ? `${Math.max(0, bounds.bottom - top)}px` : '0px');
-            surface.style.setProperty('--tw-script-view-left', !horizontal && bounds.left <= left + 2 ? `${bounds.width}px` : '0px');
-            surface.style.setProperty('--tw-script-view-right', !horizontal && bounds.right >= right - 2 ? `${bounds.width}px` : '0px');
-        }
+        const bounds = toolbox?.getBoundingClientRect();
+        const horizontal = toolbox?.hasAttribute('data-horizontal-block-palette');
         const scale = workspace.scale || 1;
         const scripts = readScripts(workspace).map(script => {
             // Include raised hats and labels, and exclude folded bodies, when measuring the visible gap.
@@ -203,6 +191,14 @@ export function attachScriptView({
         const placements = arrangeScripts(scripts, view, 'vertical', Math.max(64, 48 / scale))
             // Leave room for incoming arrowheads and return paths beside the fixed fold gutter.
             .map(placement => ({...placement, x: placement.x + 40 / scale}));
+        const topInset = bounds && horizontal ? Math.max(0, bounds.bottom - top) : 0;
+        const leftInset = bounds && !horizontal && bounds.left <= left + 2 ? bounds.width : 0;
+        const rightInset = bounds && !horizontal && bounds.right >= right - 2 ? bounds.width : 0;
+        for (const overlay of [surface, gutter]) {
+            overlay.style.setProperty('--tw-script-view-top', `${topInset}px`);
+            overlay.style.setProperty('--tw-script-view-left', `${leftInset}px`);
+        }
+        surface.style.setProperty('--tw-script-view-right', `${rightInset}px`);
         const projectedSvg = paintScripts(contents, placements, scale, rebuildProjection ? undefined : projection?.svg);
         projection = {surface, svg: projectedSvg, progressive: view === 'z'};
         rebuildProjection = false;
@@ -229,6 +225,7 @@ export function attachScriptView({
         view = next;
         surface.hidden = view === 'free';
         gutter.hidden = view === 'free';
+        foldStrip.style.removeProperty('transform');
         svg.toggleAttribute('data-script-serial', view !== 'free');
         labels();
         if (view === 'free') {
@@ -236,7 +233,7 @@ export function attachScriptView({
             setScriptProjection(workspace);
             relations?.setProjection(null);
             contents.replaceChildren();
-            gutter.replaceChildren();
+            foldStrip.replaceChildren();
             foldButtons.clear();
         }
         else {
@@ -264,8 +261,16 @@ export function attachScriptView({
         chooseView('free');
         workspace.centerOnBlock(id);
     });
-    const resize = new window.ResizeObserver(update);
+    const resize = new window.ResizeObserver(entries => {
+        for (const {target, contentRect} of entries) {
+            if (target === surface) {
+                // The content box excludes the scrollbar. Use the layout already observed by the browser.
+                gutter.style.height = `${contentRect.height}px`;
+            } else update();
+        }
+    });
     resize.observe(host);
+    resize.observe(surface);
     const language = new window.MutationObserver(() => {labels(); update();});
     language.observe(document.documentElement, {attributes: true, attributeFilter: ['lang']});
     // The Blockly keyboard listener is document-wide.
@@ -277,7 +282,8 @@ export function attachScriptView({
     });
     host.append(surface, gutter);
     surface.addEventListener('scroll', () => {
-        positionFoldButtons();
+        const transform = `translateY(${-surface.scrollTop}px)`;
+        if (foldStrip.style.transform !== transform) foldStrip.style.transform = transform;
         if (view !== 'free' && projection) setScriptProjection(workspace, projection);
     }, {passive: true});
     setView(initialView);

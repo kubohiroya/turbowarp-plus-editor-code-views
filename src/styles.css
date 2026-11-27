@@ -739,6 +739,9 @@
 .tw-script-fold-gutter {
     position: absolute;
     z-index: 4;
+    top: var(--tw-script-view-top, 0px);
+    bottom: 0;
+    left: var(--tw-script-view-left, 0px);
     width: 28px;
     overflow: hidden;
     pointer-events: none;
@@ -748,7 +751,12 @@
     display: none;
 }
 
-.tw-script-fold-gutter > button {
+.tw-script-fold-gutter > div {
+    position: absolute;
+    inset: 0;
+}
+
+.tw-script-fold-gutter > div > button {
     position: absolute;
     left: 2px;
     width: 24px;
@@ -763,7 +771,7 @@
     pointer-events: auto;
 }
 
-.tw-script-fold-gutter > button:is(:hover, :focus-visible) {
+.tw-script-fold-gutter > div > button:is(:hover, :focus-visible) {
     background: var(--ui-tertiary, #e5e7eb);
     outline: 2px solid var(--motion-primary, #4c97ff);
     outline-offset: -2px;
