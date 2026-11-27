@@ -163,14 +163,25 @@ for (const layout of ['z', 'n'] as const) {
             await button.press('Enter');
             await expect(button).toHaveText('▼');
             await expect(page.locator('.tw-script-view-surface [data-tw-plus-folded-mark]')).toHaveCount(0);
-            await page.evaluate(async () => {
+            const offsetReads = await page.evaluate(async () => {
                 const f = (globalThis as any).fixture;
+                const surface = document.querySelector<HTMLElement>('.tw-script-view-surface');
+                const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetLeft');
+                let reads = 0;
+                Object.defineProperty(surface, 'offsetLeft', {configurable: true, get() {
+                    reads++;
+                    return original.get.call(surface);
+                }});
                 const mount = f.workspace.getInjectionDiv().parentElement;
-                mount.style.width = '500px';
-                mount.style.height = '460px';
-                (globalThis as any).Blockly.svgResize(f.workspace);
-                await f.zoom(1.5);
+                try {
+                    mount.style.width = '500px';
+                    mount.style.height = '460px';
+                    (globalThis as any).Blockly.svgResize(f.workspace);
+                    await f.zoom(1.5);
+                    return reads;
+                } finally { Reflect.deleteProperty(surface, 'offsetLeft'); }
             });
+            assert.equal(offsetReads, 0);
             await page.locator('.tw-script-view-surface').evaluate(surface => surface.scrollTo(100, 140));
             await expect.poll(() => page.locator('.tw-script-view-surface').evaluate(surface => surface.scrollLeft)).toBeGreaterThan(0);
             const readPositions = () => page.locator('.tw-script-fold-gutter').evaluate(gutter => {
@@ -192,6 +203,10 @@ for (const layout of ['z', 'n'] as const) {
                 assert.ok(Math.abs(position.deltaY) < 1.1, `vertical alignment ${position.deltaY}`);
                 assert.ok(Math.abs(position.deltaX - 2) < 1.1, `pinned left edge ${position.deltaX}`);
             });
+            await expect.poll(() => page.locator('.tw-script-fold-gutter').evaluate(gutter => {
+                const surface = gutter.parentElement.querySelector('.tw-script-view-surface');
+                return Math.abs(gutter.getBoundingClientRect().height - surface.clientHeight);
+            })).toBeLessThan(1);
             await page.evaluate(async () => {
                 const f = (globalThis as any).fixture;
                 const mount = f.workspace.getInjectionDiv().parentElement;
