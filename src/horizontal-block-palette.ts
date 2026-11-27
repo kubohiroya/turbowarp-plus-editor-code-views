@@ -6,9 +6,9 @@ import {attachPaletteDropdownResize} from './palette-dropdown-resize.js';
 import {connectDetachedBlockPalette, openDetachedBlockPalette as openPaletteWindow, installGestureOwnerDocument, moveBlockWidgets} from
     './detached-block-palette.js';
 import {attachPaletteMenuButton, createPaletteOrder, createPaletteVisibilityStore, defaultVisibleGroups, extensionPaletteCatalog, groupOfOpcode,
-    installExtensionPaletteGroups, paletteGroupSets, paletteScreenStateKey, paletteVisibilityMenuLabel, standardGroups, usedGroups} from './palette-category-visibility.js';
+    installExtensionPaletteGroups, paletteGroupSets, paletteReplacementGroups, paletteScreenStateKey, paletteVisibilityMenuLabel, standardGroups, usedGroups} from './palette-category-visibility.js';
 import type {PaletteCategoryInfo, PaletteTarget, PaletteVisibilityStore} from './palette-category-visibility.js';
-import {openPaletteVisibilityDialog} from './palette-visibility-dialog.js';
+import {openPaletteReplacementDialog, openPaletteVisibilityDialog} from './palette-visibility-dialog.js';
 import {attachPaletteCategoryGroups, hasCategoryGroups} from
     './palette-category-groups.js';
 
@@ -59,6 +59,9 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
     const paletteRefreshers = new Set<() => void>();
     // The palettes that can ask which groups a sprite just added shows; the latest one asks.
     const newSpritePrompts: ((target: any) => void)[] = [];
+    type ReplacementHost = {document: Document; getLocale(): string};
+    const replacementHosts = new Map<object, ReplacementHost>();
+    let replacementDialog: {host: ReplacementHost; close(): void} | undefined;
 
     // The groups the loaded extensions offer: one per extension, or one per group an extension declares.
     // Group names are in the editor's language, where the palette and the settings screen show them.
@@ -69,6 +72,44 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         left.size === right.length && right.every(group => left.has(group));
     // Another sprite may share the same toolbox XML, in which case the GUI does not redraw the palette.
     const refreshPalettes = () => setTimeout(() => {for (const update of paletteRefreshers) update();}, 0);
+
+    /** Called only after an explicit extension activation in the editor UI. */
+    const suggestPaletteReplacements = (owner: object, enabled: readonly string[]) => {
+        const vm = paletteVM;
+        const store = paletteStore;
+        const target = vm?.editingTarget;
+        if (!showPaletteMenu || !vm || vm !== owner || !store || !target || !enabled.length) return;
+        const current = () => paletteStore === store && vm.editingTarget === target && vm.runtime.targets?.includes(target);
+        // Let the library or palette settings close before presenting a modal over the active workspace.
+        setTimeout(() => {
+            if (!current()) return;
+            const workspace = getScratchBlocks()?.getMainWorkspace?.();
+            const host = (workspace && replacementHosts.get(workspace)) ?? Array.from(replacementHosts.values()).at(-1);
+            if (!host) return;
+            const visible = store.visible(target, extensionIds(vm));
+            const alternatives = (vm.runtime._blockInfo ?? []).filter(extension => enabled.includes(extension.id) &&
+                extension.replacesPaletteGroups?.some(group => visible.has(group)));
+            const groups = paletteReplacementGroups(alternatives.flatMap(extension => extension.replacesPaletteGroups ?? []))
+                .filter(group => visible.has(group));
+            if (!groups.length) return;
+            replacementDialog?.close();
+            replacementDialog = {host, close: openPaletteReplacementDialog(host.document, {
+                locale: host.getLocale(), targetName: target.getName(), isStage: target.isStage, groups,
+                extensions: alternatives.map(extension => extension.name || extension.id),
+                onClose: () => { replacementDialog = undefined; },
+                onHide() {
+                    if (!current()) return;
+                    const ids = extensionIds(vm);
+                    const latest = store.visible(target, ids);
+                    const next = [...latest].filter(group => !groups.some(replaced => replaced === group));
+                    if (next.length === latest.size) return;
+                    store.set(target, next, ids);
+                    vm.runtime.emitProjectChanged();
+                    refreshPalettes();
+                }
+            })};
+        }, 0);
+    };
 
     /**
      * Lets the palette show each sprite's and the stage's own block groups, and saves them with the editor's screen
@@ -96,6 +137,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         register();
         // A project opens with its own settings, or with every target at its default.
         const loaded = () => {
+            replacementDialog?.close();
             register();
             store.reset();
             refreshPalettes();
@@ -239,7 +281,10 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             unregister?.();
             removeExtensionGroups();
             if (paletteVM === vm) paletteVM = null;
-            if (paletteStore === store) paletteStore = null;
+            if (paletteStore === store) {
+                replacementDialog?.close();
+                paletteStore = null;
+            }
         };
     };
 
@@ -537,12 +582,15 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             if (lastTree) workspace.updateToolbox(lastTree.cloneNode(true));
         };
         paletteRefreshers.add(redraw);
+        const replacementHost = {document: doc, getLocale};
+        replacementHosts.set(workspace, replacementHost);
         const openGroupSettings = (target = paletteVM?.editingTarget, newSprite = false) => {
             const vm = paletteVM;
             const store = paletteStore;
             if (!vm || !store || !target) return;
             const catalog = catalogOf(vm, getLocale());
             const ids = catalog.groups.map(group => group.id);
+            const initial = store.visible(target, ids);
             openPaletteVisibilityDialog(doc, {
                 locale: getLocale(),
                 targetName: target.getName(),
@@ -551,7 +599,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
                 // A second or later sprite can copy the groups one already made shows.
                 copySources: newSprite ? originalTargets(vm).filter(other => !other.isStage && other !== target)
                     .map(other => ({name: other.getName(), groups: [...store.visible(other, ids)]})) : undefined,
-                initial: store.visible(target, ids),
+                initial,
                 used: usedGroups(target, catalog),
                 extensions: (vm.runtime._blockInfo ?? []).map(info => {
                     const groups = catalog.groups.filter(group => group.extensionId === info.id);
@@ -568,6 +616,13 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
                     store.set(target, groups, ids);
                     vm.runtime.emitProjectChanged();
                     redraw();
+                    if (vm.editingTarget === target) {
+                        const previous = new Set(catalog.groups.filter(group => initial.has(group.id))
+                            .map(group => group.extensionId));
+                        const enabled = catalog.groups.filter(group => groups.includes(group.id) && !previous.has(group.extensionId))
+                            .map(group => group.extensionId);
+                        suggestPaletteReplacements(vm, enabled);
+                    }
                 },
                 onCancel() {}
             });
@@ -823,6 +878,8 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         toolbox.dispose = () => {
             if (workspace.setVisible === setVisible) workspace.setVisible = original.setVisible;
             paletteRefreshers.delete(redraw);
+            replacementHosts.delete(workspace);
+            if (replacementDialog?.host === replacementHost) replacementDialog.close();
             newSpritePrompts.splice(newSpritePrompts.indexOf(askNewSprite) >>> 0, 1);
             paletteMenu?.dispose();
             groups.dispose();
@@ -870,5 +927,5 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         };
     };
 
-    return {connectPaletteVisibility, setHorizontalBlockPalette, openDetachedBlockPalette, installHorizontalBlockPalette};
+    return {connectPaletteVisibility, suggestPaletteReplacements, setHorizontalBlockPalette, openDetachedBlockPalette, installHorizontalBlockPalette};
 }

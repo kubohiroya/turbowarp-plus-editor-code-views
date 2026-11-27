@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import {ExtensionRow} from '@kubohiroya/turbowarp-extension-security-dialog/react';
 import type {ExtensionMetadata} from '@kubohiroya/turbowarp-extension-security-dialog';
-import {standardGroups, type PaletteGroupSet} from './palette-category-visibility.ts';
+import {standardGroups, type PaletteGroupSet, type ReplaceablePaletteGroup} from './palette-category-visibility.ts';
 
 export interface PaletteExtension {
     /** The extension ID, which is also its palette category ID. */
@@ -340,6 +340,56 @@ export function openPaletteVisibilityDialog(document: Document, props: PaletteVi
             props.onCancel();
         }
     }), dialog);
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+    return close;
+}
+
+/** Asks whether to hide the standard groups an enabled extension offers to replace. */
+export function openPaletteReplacementDialog(document: Document, {locale, targetName, isStage, extensions, groups, onHide, onClose}: {
+    locale?: string;
+    targetName: string;
+    isStage?: boolean;
+    extensions: readonly string[];
+    groups: readonly ReplaceablePaletteGroup[];
+    onHide(): void;
+    onClose(): void;
+}): () => void {
+    const ja = isJapanese(locale);
+    const language = ja ? 'ja' : 'en';
+    const names = standardNames[language];
+    const targetLabel = isStage ? messages[language].stage : targetName;
+    const groupNames = groups.map(group => names[group]).join(ja ? '・' : ' and ');
+    const extensionNames = extensions.join(ja ? '、' : ', ');
+    const title = ja ? `標準の${groupNames}を隠しますか？` : `Hide standard blocks for ${groupNames}?`;
+    const detail = ja ? `${extensionNames} が代替を提供します。設定は「${targetLabel}」のパレットに適用されます。` :
+        `This applies to the palette for “${targetLabel}”. Alternative: ${extensionNames}.`;
+    const dialog = document.createElement('dialog');
+    dialog.className = 'tw-palette-visibility-dialog tw-palette-replacement-dialog';
+    dialog.setAttribute('aria-label', title);
+    document.body.append(dialog);
+    const close = () => {
+        if (!dialog.isConnected) return;
+        ReactDOM.unmountComponentAtNode(dialog);
+        if (dialog.open && typeof dialog.close === 'function') dialog.close();
+        dialog.remove();
+        onClose();
+    };
+    dialog.addEventListener('cancel', event => {
+        event.preventDefault();
+        close();
+    });
+    ReactDOM.render(<div className="tw-palette-visibility">
+        <header className="tw-palette-visibility-header"><h2>{title}</h2></header>
+        <section>{detail}</section>
+        <footer className="tw-palette-visibility-footer">
+            <button type="button" autoFocus onClick={close}>{ja ? '表示したまま' : 'Keep visible'}</button>
+            <button type="button" className="tw-palette-visibility-apply" onClick={() => {
+                close();
+                onHide();
+            }}>{ja ? '隠す' : 'Hide'}</button>
+        </footer>
+    </div>, dialog);
     if (typeof dialog.showModal === 'function') dialog.showModal();
     else dialog.setAttribute('open', '');
     return close;
