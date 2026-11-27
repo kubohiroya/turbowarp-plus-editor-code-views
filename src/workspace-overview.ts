@@ -11,6 +11,32 @@ type OverviewOptions = {
 
 const svgNamespace = 'http://www.w3.org/2000/svg';
 
+type ScriptPosition = {root: SVGGraphicsElement; x: number; y: number};
+
+function scriptPositions({svg}: ScriptProjection): ScriptPosition[] | undefined {
+    const positions: ScriptPosition[] = [];
+    for (const root of svg.querySelectorAll<SVGGraphicsElement>(':scope > [data-script-view-block]')) {
+        // paintScripts translates each root in projection coordinates, independently of SVG zoom.
+        const transforms = root.transform.baseVal;
+        if (transforms.numberOfItems !== 1) return;
+        const transform = transforms.getItem(0);
+        if (transform.type !== svg.ownerDocument.defaultView.SVGTransform.SVG_TRANSFORM_TRANSLATE) return;
+        positions.push({root, x: transform.matrix.e, y: transform.matrix.f});
+    }
+    return positions;
+}
+
+function sharedTranslation(before: ScriptPosition[] | undefined, after: ScriptPosition[] | undefined) {
+    if (!before || !after || before.length !== after.length) return;
+    if (!before.length) return {x: 0, y: 0};
+    const x = after[0].x - before[0].x, y = after[0].y - before[0].y;
+    const close = (a: number, b: number) => Math.abs(a - b) < .0001;
+    if (Number.isFinite(x) && Number.isFinite(y) && before.every((old, i) => {
+        const next = after[i];
+        return old.root === next.root && close(next.x - old.x, x) && close(next.y - old.y, y);
+    })) return {x, y};
+}
+
 /** A cached overview drawn from public block geometry; offscreen culling never changes the project map. */
 export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 0, getCorner,
     watermark, getWatermark}: OverviewOptions) {
@@ -33,6 +59,8 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     container.append(map);
     const paths = new Map<string, SVGPathElement>();
     let needsShapes = true;
+    let needsPlacement = false;
+    let sampledPositions: ScriptPosition[] | undefined;
     let frame: number | undefined;
     let disposed = false;
     const attribute = (node: Element, name: string, value: string | number) => {
@@ -125,9 +153,20 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
             (metrics.toolboxPosition === ScratchBlocks.TOOLBOX_AT_BOTTOM ? metrics.toolboxHeight : 0) + 16;
         const borderX = container.offsetWidth - container.clientWidth - container.clientLeft;
         const borderY = container.offsetHeight - container.clientHeight - container.clientTop;
+        const positions = projection && (needsShapes || needsPlacement) ? scriptPositions(projection) : undefined;
+        const shift = needsPlacement && !needsShapes ? sharedTranslation(sampledPositions, positions) : undefined;
 
         // All layout reads above precede writes. Identical values do not invalidate the editor's styles.
-        if (needsShapes) refreshShapes();
+        if (needsShapes || needsPlacement && !shift) {
+            refreshShapes();
+            sampledPositions = positions;
+            if (shapes.hasAttribute('transform')) shapes.removeAttribute('transform');
+        } else if (shift?.x || shift?.y) {
+            attribute(shapes, 'transform', `translate(${shift.x} ${shift.y})`);
+        } else if (shift && shapes.hasAttribute('transform')) {
+            shapes.removeAttribute('transform');
+        }
+        needsPlacement = false;
         map.toggleAttribute('hidden', false);
         const viewBox = `${area.x} ${area.y} ${area.width} ${area.height}`;
         attribute(map, 'viewBox', viewBox); attribute(clip, 'viewBox', viewBox);
@@ -164,9 +203,10 @@ export function attachWorkspaceOverview({workspace, ScratchBlocks, zoomHeight = 
     let displayedProjection: ScriptProjection | undefined;
     function projectionChanged() {
         const next = getScriptProjection(workspace);
-        // Layout changes can reuse the SVG; scrolling keeps the same projection.
+        // Reusing an SVG keeps its shape data, but zoom can still change spacing between scripts.
         const changedSVG = next?.svg !== displayedProjection?.svg;
-        needsShapes ||= next !== displayedProjection;
+        needsShapes ||= changedSVG;
+        needsPlacement ||= next !== displayedProjection;
         displayedProjection = next;
         if (changedSVG) {
             if (frame !== undefined) view.cancelAnimationFrame(frame);
