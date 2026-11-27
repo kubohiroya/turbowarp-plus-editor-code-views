@@ -152,6 +152,19 @@ test('an extension that declares groups offers each of them, and its unmarked bl
     assert.equal(installExtensionPaletteGroups({})(), undefined, 'a VM without the method is left alone');
 });
 
+test('extension replacement declarations recognize only standard variables and lists and are refreshed', () => {
+    const runtime = {_fillExtensionCategory() {}};
+    const restore = installExtensionPaletteGroups(runtime);
+    const category = {id: 'replacement'};
+    runtime._fillExtensionCategory(category, {replacesPaletteGroups: ['lists', 'motion', 'variables', 'lists', 4]});
+    assert.deepEqual(category.replacesPaletteGroups, ['variables', 'lists']);
+    runtime._fillExtensionCategory(category, {replacesPaletteGroups: ['lists']});
+    assert.deepEqual(category.replacesPaletteGroups, ['lists']);
+    runtime._fillExtensionCategory(category, {replacesPaletteGroups: 'variables'});
+    assert.equal(category.replacesPaletteGroups, undefined);
+    restore();
+});
+
 test('a group name can be given per locale and hold line breaks', () => {
     const names = {en: 'Speech\nand text', ja: 'セリフと\n文字', 'zh-cn': '对白'};
     assert.equal(resolveGroupName(names, 'ja'), 'セリフと\n文字');

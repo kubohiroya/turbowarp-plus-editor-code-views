@@ -176,6 +176,8 @@ getInfo() {
 - 見出し・区切り・ボタンは、その次のブロックと同じグループに入る。オペコードは `shapes_circle` などのまま変わらないので、SB3 は変わらない。標準の TurboWarp と Scratch は `groups` と `paletteGroup` を無視し、1つのカテゴリとして表示する。
 - ホストは、機能拡張を読み込む前に `installExtensionPaletteGroups(vm.runtime)` を呼び、`extensionPaletteCatalog(vm.runtime._blockInfo)` をストア、`filterToolboxTree`、`usedGroups` に渡す。設定の画面には、そのような機能拡張の項目の `groups` としてグループを渡す。画面は機能拡張の行の中に、グループごとのチェックを出す。
 
+拡張の `getInfo()` に `replacesPaletteGroups: ['variables', 'lists']` を指定すると、該当する標準グループを隠す提案ができます。変数だけ、リストだけ、両方を宣言できます。パレット設定で拡張のグループを表示するか、ホストが明示的な追加の成功後に `suggestPaletteReplacements(vm, extensionIds)` を呼んだとき、表示中の標準グループだけを提案します。承認した変更は選択中のスプライトまたはステージのパレット設定に保存されます。作品を開く処理からはこの口を呼びません。
+
 
 ## Editor の実装との責務分担
 

@@ -11,6 +11,31 @@
 export const standardGroups = ['motion', 'looks', 'sound', 'events', 'control', 'sensing', 'operators', 'variables', 'lists',
     'myBlocks'] as const;
 
+const replaceablePaletteGroups = ['variables', 'lists'] as const;
+export type ReplaceablePaletteGroup = typeof replaceablePaletteGroups[number];
+
+/** The standard groups an extension explicitly offers to replace. */
+export function paletteReplacementGroups(value: unknown): ReplaceablePaletteGroup[] {
+    return Array.isArray(value) ? replaceablePaletteGroups.filter(group => value.includes(group)) : [];
+}
+
+/** Notify the palette about newly enabled extensions after an explicit host action succeeds. */
+export async function withPaletteExtensionActivation<Result>(
+    vm: {extensionManager: {isExtensionLoaded(id: string): boolean}},
+    ids: readonly string[],
+    activate: () => Promise<Result>,
+    notify?: (owner: object, extensionIds: readonly string[]) => void,
+    signal?: AbortSignal
+): Promise<Result> {
+    if (!notify) return activate();
+    const candidates = ids.filter(id => !vm.extensionManager.isExtensionLoaded(id));
+    const result = await activate();
+    if (signal?.aborted) return result;
+    const added = candidates.filter(id => vm.extensionManager.isExtensionLoaded(id));
+    if (added.length) notify(vm, added);
+    return result;
+}
+
 /** A named set of groups the project keeps. */
 export interface SavedGroupSet {
     name: string;
@@ -95,6 +120,8 @@ export interface PaletteCategoryInfo {
     blockIconURI?: string;
     /** The groups the extension declares, kept by {@link installExtensionPaletteGroups}. */
     paletteGroups?: unknown;
+    /** Optional `getInfo().replacesPaletteGroups`, kept by {@link installExtensionPaletteGroups}. */
+    replacesPaletteGroups?: readonly ReplaceablePaletteGroup[];
     blocks?: readonly {info?: {paletteGroup?: unknown}; json?: {type?: unknown} | null}[];
 }
 
@@ -156,6 +183,9 @@ export function installExtensionPaletteGroups(runtime: {_fillExtensionCategory?:
         const groups = declaredGroups(extensionInfo?.groups);
         if (categoryInfo && typeof categoryInfo === 'object') {
             categoryInfo.paletteGroups = groups;
+            const replacements = paletteReplacementGroups(extensionInfo?.replacesPaletteGroups);
+            if (replacements.length) categoryInfo.replacesPaletteGroups = replacements;
+            else delete categoryInfo.replacesPaletteGroups;
             for (const block of Array.isArray(categoryInfo.blocks) ? categoryInfo.blocks : []) {
                 const group = groups.find(item => item.id === block?.info?.paletteGroup);
                 if (!group?.color1 || !block.json || block.info.color1 !== undefined) continue;
