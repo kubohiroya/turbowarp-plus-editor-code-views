@@ -5,9 +5,9 @@ import {attachPaletteCategorySearch, matchPaletteBlocks, paletteSearchHeight} fr
 import {attachPaletteDropdownResize} from './palette-dropdown-resize.js';
 import {connectDetachedBlockPalette, openDetachedBlockPalette as openPaletteWindow, installGestureOwnerDocument, moveBlockWidgets} from
     './detached-block-palette.js';
-import {attachPaletteMenuButton, createPaletteOrder, createPaletteVisibilityStore, defaultVisibleGroups, extensionPaletteCatalog,
-    installExtensionPaletteGroups, paletteGroupSets, paletteScreenStateKey, paletteVisibilityMenuLabel, usedGroups} from './palette-category-visibility.js';
-import type {PaletteCategoryInfo, PaletteVisibilityStore} from './palette-category-visibility.js';
+import {attachPaletteMenuButton, createPaletteOrder, createPaletteVisibilityStore, defaultVisibleGroups, extensionPaletteCatalog, groupOfOpcode,
+    installExtensionPaletteGroups, paletteGroupSets, paletteScreenStateKey, paletteVisibilityMenuLabel, standardGroups, usedGroups} from './palette-category-visibility.js';
+import type {PaletteCategoryInfo, PaletteTarget, PaletteVisibilityStore} from './palette-category-visibility.js';
 import {openPaletteVisibilityDialog} from './palette-visibility-dialog.js';
 import {attachPaletteCategoryGroups, hasCategoryGroups} from
     './palette-category-groups.js';
@@ -25,6 +25,11 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
     const palettes = new Set<(horizontal: boolean) => void>();
     let horizontalLayout = false;
 
+    type ImportedBlock = {opcode?: string; shadow?: boolean};
+    type Share = (payload: unknown, targetId: string, fromTargetId?: string) => Promise<unknown>;
+    type ShareWithReceipt = (payload: unknown, targetId: string, hooks?: any) =>
+        Promise<{blockIds: readonly string[]} | null>;
+
     // The VM whose editing target decides which block groups the palette shows.
     type PaletteVM = {
         editingTarget?: any;
@@ -41,6 +46,8 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
         off(event: string, listener: (...args: any[]) => void): void;
         addSprite?(...args: any[]): Promise<unknown>;
         duplicateSprite?(targetId: string): Promise<unknown>;
+        shareBlocksToTarget?: Share;
+        shareBlocksToTargetWithReceipt?: ShareWithReceipt;
     };
     /** The part of the editor's screen state the palette settings are saved with. */
     type PaletteScreenState = {
@@ -114,6 +121,63 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             store.set(target, [...groups, ...offered.filter(group => !groups.has(group))], extensionIds(vm));
             changed();
         };
+        const targetById = (id: string): PaletteTarget | undefined =>
+            vm.runtime.targets?.find(target => target.id === id);
+        const activateImportedGroups = (target: PaletteTarget, imported: Iterable<ImportedBlock | undefined>) => {
+            const catalog = catalogOf(vm);
+            const ids = catalog.groups.map(group => group.id);
+            const offered = new Set([...standardGroups, ...ids]);
+            const visible = store.visible(target, ids);
+            const before = visible.size;
+            for (const block of imported) {
+                if (block?.shadow || !block?.opcode) continue;
+                const group = groupOfOpcode(block.opcode, catalog);
+                if (group && offered.has(group)) visible.add(group);
+            }
+            if (visible.size === before) return;
+            store.set(target, [...visible], ids);
+            changed();
+        };
+        const originalShare = vm.shareBlocksToTarget;
+        const originalShareWithReceipt = vm.shareBlocksToTargetWithReceipt;
+        const hadOwnShare = Object.hasOwn(vm, 'shareBlocksToTarget');
+        const hadOwnShareWithReceipt = Object.hasOwn(vm, 'shareBlocksToTargetWithReceipt');
+        let watchingImports = true;
+        // Legacy transfers do not return block IDs. Match the incoming opcodes against the blocks added to this target.
+        const share: Share | undefined = originalShare && function (this: PaletteVM, ...args: Parameters<Share>) {
+            const [payload, targetId] = args;
+            const target = targetById(targetId);
+            const incoming: unknown = Array.isArray(payload) ? payload : (payload as {blocks?: unknown} | null)?.blocks;
+            const before = target?.blocks?._blocks;
+            if (!target || !before || !Array.isArray(incoming)) return originalShare.apply(this, args);
+            const opcodes = new Set(incoming.filter(block => !block?.shadow && typeof block?.opcode === 'string')
+                .map(block => block.opcode));
+            if (!opcodes.size) return originalShare.apply(this, args);
+            const existing = new Set(Object.keys(before));
+            return originalShare.apply(this, args).then(result => {
+                if (watchingImports && targetById(targetId) === target) {
+                    const created = Object.entries(target.blocks?._blocks ?? {})
+                        .filter(([id, block]) => !existing.has(id) && opcodes.has(block?.opcode))
+                        .map(([, block]) => block);
+                    activateImportedGroups(target, created);
+                }
+                return result;
+            });
+        };
+        const shareWithReceipt: ShareWithReceipt | undefined = originalShareWithReceipt && function (this: PaletteVM,
+            ...args: Parameters<ShareWithReceipt>) {
+            const [, targetId] = args;
+            const target = targetById(targetId);
+            return originalShareWithReceipt.apply(this, args).then(receipt => {
+                if (watchingImports && target && receipt && targetById(targetId) === target) {
+                    activateImportedGroups(target, receipt.blockIds.map(id => target.blocks?._blocks?.[id]));
+                }
+                return receipt;
+            });
+        };
+        if (share) vm.shareBlocksToTarget = share;
+        if (shareWithReceipt) vm.shareBlocksToTargetWithReceipt = shareWithReceipt;
+
         // The VM tells a duplicate, a new sprite and a loaded one apart only by the method that made it, and each
         // makes the new sprite the editing target.
         const originalDuplicate = vm.duplicateSprite;
@@ -160,6 +224,15 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
                 vm.off('workspaceUpdate', refreshPalettes);
                 vm.runtime.off('PROJECT_LOADED', loaded);
                 vm.runtime.off('EXTENSION_ADDED', added);
+            }
+            watchingImports = false;
+            if (share && vm.shareBlocksToTarget === share) {
+                if (hadOwnShare) vm.shareBlocksToTarget = originalShare;
+                else delete vm.shareBlocksToTarget;
+            }
+            if (shareWithReceipt && vm.shareBlocksToTargetWithReceipt === shareWithReceipt) {
+                if (hadOwnShareWithReceipt) vm.shareBlocksToTargetWithReceipt = originalShareWithReceipt;
+                else delete vm.shareBlocksToTargetWithReceipt;
             }
             if (vm.duplicateSprite !== originalDuplicate) vm.duplicateSprite = originalDuplicate;
             if (vm.addSprite !== originalAddSprite) vm.addSprite = originalAddSprite;
