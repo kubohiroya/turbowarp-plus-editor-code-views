@@ -107,6 +107,15 @@ const receiver = (id: string, x: number, y: number) => ({
             await settle();
         },
         disposeOverview() {overview?.dispose();},
+        overviewGeometry(node: Element) {
+            const source = node.querySelector<SVGPathElement>(':scope > .blocklyPath');
+            const map = document.querySelector<SVGSVGElement>('[data-workspace-minimap]');
+            const path = [...map.querySelectorAll('g path')].find(path => path.getAttribute('d') === source.getAttribute('d'));
+            const actual = map.getScreenCTM().inverse().multiply(path.getScreenCTM());
+            const expected = node.closest('svg').getScreenCTM().inverse().multiply(source.getScreenCTM());
+            return {actual: [actual.a, actual.b, actual.c, actual.d, actual.e, actual.f],
+                expected: [expected.a, expected.b, expected.c, expected.d, expected.e, expected.f]};
+        },
         async attachLayout() {
             arrows.dispose();
             scriptView?.dispose();

@@ -26,6 +26,7 @@ const open = async (layout: 'z' | 'n', locale = 'en') => {
         await f.layout(layout);
     }, {layout, locale});
     await expect(page.locator('.tw-script-view-surface [data-script-view-block]')).toHaveCount(4);
+    await expect(page.locator('[data-workspace-minimap] path[transform^="matrix("]').first()).toBeAttached();
     return {page, errors};
 };
 
@@ -48,29 +49,50 @@ for (const layout of ['z', 'n'] as const) {
         } finally {await page.close();}
     });
 
-    test(`${layout}: zoom reuses projected blocks and a source edit refreshes them`, async () => {
+    test(`${layout}: zoom reuses projection and overview shapes, and a source edit refreshes them`, async () => {
         const {page, errors} = await open(layout);
         try {
             const root = page.locator('[data-script-view-block="start"]');
             const original = await root.elementHandle();
             const before = await root.boundingBox();
-            await page.evaluate(async scale => {
+            const zoom = await page.evaluate(async () => {
                 const fixture = (globalThis as any).fixture;
-                fixture.workspace.getBlockById('start').setIntersects(false);
-                await fixture.zoom(scale);
-            }, 0.5);
+                const map = document.querySelector('[data-workspace-minimap]');
+                const paths = [...map.querySelectorAll('g path')];
+                const transforms = paths.map(path => path.getAttribute('transform'));
+                const before = map.querySelector('rect').getAttribute('width');
+                const querySelectorAll = Element.prototype.querySelectorAll;
+                let scans = 0;
+                Element.prototype.querySelectorAll = function (selectors: string) {
+                    if (selectors === '.blocklyPath' && this.closest('.tw-script-layout-svg')) scans++;
+                    return querySelectorAll.call(this, selectors);
+                };
+                try {
+                    fixture.workspace.getBlockById('start').setIntersects(false);
+                    await fixture.zoom(.8);
+                    const after = [...map.querySelectorAll('g path')];
+                    const retained = {scans, reused: paths.length === after.length &&
+                        after.every((path, i) => path === paths[i] && path.getAttribute('transform') === transforms[i]),
+                        viewportChanged: map.querySelector('rect').getAttribute('width') !== before};
+                    const {actual, expected} = fixture.overviewGeometry(document.querySelector('[data-script-view-block="start"]'));
+                    scans = 0;
+                    await fixture.zoom(.5);
+                    return {retained, aligned: actual.every((value, i) => Math.abs(value - expected[i]) < .01),
+                        reflowScans: scans};
+                } finally {Element.prototype.querySelectorAll = querySelectorAll;}
+            });
+            assert.deepEqual(zoom.retained, {scans: 0, reused: true, viewportChanged: true});
+            assert.equal(zoom.aligned, true);
+            assert.ok(zoom.reflowScans > 0);
             assert.ok((await root.boundingBox()).width < before.width);
             assert.equal(await root.evaluate((node, saved) => node === saved, original), true);
-            const overviewAligned = await root.evaluate(node => {
-                const svg = node.ownerSVGElement;
-                const source = node.querySelector<SVGPathElement>(':scope > .blocklyPath');
-                const path = [...document.querySelectorAll<SVGPathElement>('[data-workspace-minimap] > g > path')]
-                    .find(path => path.getAttribute('d') === source.getAttribute('d'));
-                const actual = path.transform.baseVal.consolidate().matrix;
-                const expected = svg.getScreenCTM().inverse().multiply(source.getScreenCTM());
-                return ['a', 'd', 'e', 'f'].every(key => Math.abs(actual[key] - expected[key]) < .01);
-            });
-            assert.equal(overviewAligned, true);
+            const {actual, expected} = await root.evaluate(node => (globalThis as any).fixture.overviewGeometry(node));
+            actual.forEach((value, index) => assert.ok(Math.abs(value - expected[index]) < .01));
+            const count = await page.locator('[data-workspace-minimap] > g path').count();
+            await page.evaluate(() => (globalThis as any).fixture.hideScript('start', true));
+            await expect.poll(() => page.locator('[data-workspace-minimap] > g path').count()).toBeLessThan(count);
+            await page.evaluate(() => (globalThis as any).fixture.hideScript('start', false));
+            await expect(page.locator('[data-workspace-minimap] > g path')).toHaveCount(count);
             await page.evaluate(() => (globalThis as any).fixture.reload());
             assert.equal(await root.evaluate((node, saved) => node === saved, original), false);
             assert.deepEqual(errors, []);
@@ -236,13 +258,7 @@ for (const layout of ['z', 'n'] as const) {
                 const roots = [...svg.querySelectorAll<SVGGraphicsElement>(':scope > [data-script-view-block]')];
                 const boxes = roots.map(root => root.getBoundingClientRect());
                 const gaps = boxes.slice(1).map((box, index) => box.top - boxes[index].bottom);
-                const source = roots[0].querySelector<SVGPathElement>(':scope > .blocklyPath');
-                const path = [...document.querySelectorAll<SVGPathElement>('[data-workspace-minimap] > g > path')]
-                    .find(path => path.getAttribute('d') === source.getAttribute('d'));
-                const actual = path.transform.baseVal.consolidate().matrix;
-                const expected = svg.getScreenCTM().inverse().multiply(source.getScreenCTM());
-                return {gaps, actual: [actual.a, actual.d, actual.e, actual.f],
-                    expected: [expected.a, expected.d, expected.e, expected.f]};
+                return {gaps, ...(globalThis as any).fixture.overviewGeometry(roots[0])};
             });
             for (const gap of geometry.gaps) assert.ok(gap >= 47, `visible gap ${gap}`);
             geometry.actual.forEach((value, index) => assert.ok(Math.abs(value - geometry.expected[index]) < .01));
