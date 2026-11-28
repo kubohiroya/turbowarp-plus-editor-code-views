@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
 import {attachPaletteMenuButton, createPaletteVisibilityStore, defaultVisibleGroups, extensionPaletteCatalog, filterToolboxTree, groupOfOpcode,
-    installExtensionPaletteGroups, paletteGroupSets, resolveGroupName, paletteVisibilityMenuLabel, standardGroups, usedGroups} from '../dist/palette-category-visibility.js';
+    installExtensionPaletteGroups, paletteGroupLineage, paletteGroupSets, resolveGroupName, paletteVisibilityMenuLabel, standardGroups, usedGroups} from '../dist/palette-category-visibility.js';
 
 function target(name, {isStage = false, opcodes = [], id = name} = {}) {
     const blocks = Object.fromEntries(opcodes.map((opcode, index) => [`b${index}`, {opcode, shadow: opcode.endsWith('_menu')}]));
@@ -265,4 +265,77 @@ test('the ▼ button sits after the categories and lists the host items without 
     assert.equal(button.title, 'Palette menu');
     attached.dispose();
     assert.equal(menu.querySelector('button'), null);
+});
+
+/** A runtime with the Kamishibai-style library: an empty parent group holding the groups of bundled extensions. */
+function libraryRuntime(groups) {
+    const runtime = {
+        _blockInfo: [],
+        _fillExtensionCategory(categoryInfo, extensionInfo) {
+            categoryInfo.blocks = extensionInfo.blocks.map(info => ({info, json: {type: `kami_${info.opcode}`}}));
+        }
+    };
+    installExtensionPaletteGroups(runtime);
+    const categoryInfo = {id: 'kami', name: 'Kamishibai', color1: '#123456'};
+    runtime._fillExtensionCategory(categoryInfo, {
+        groups,
+        blocks: [{opcode: 'page'}, {opcode: 'cache', paletteGroup: 'assetcache'}, {opcode: 'ask', paletteGroup: 'asyncinput'},
+            {opcode: 'expr', paletteGroup: 'expression'}]
+    });
+    runtime._blockInfo.push(categoryInfo);
+    return runtime;
+}
+
+test('a declared group can be nested in another group of the same extension, which may hold no blocks', () => {
+    const runtime = libraryRuntime([
+        {id: 'assetcache', name: 'Asset Cache', parent: 'library'},
+        {id: 'library', name: {en: 'Libraries', ja: 'ライブラリ'}},
+        {id: 'asyncinput', name: 'Async Input', parent: 'library'},
+        {id: 'unused', name: 'Unused', parent: 'library'},
+        {id: 'expression', name: 'Expression'}
+    ]);
+    const catalog = extensionPaletteCatalog(runtime._blockInfo, 'ja');
+    assert.deepEqual(catalog.groups.map(group => [group.id, group.name, group.parent, group.empty ?? false]), [
+        ['kami', 'Kamishibai', undefined, false],
+        ['kami/library', 'ライブラリ', undefined, true],
+        ['kami/assetcache', 'Asset Cache', 'kami/library', false],
+        ['kami/asyncinput', 'Async Input', 'kami/library', false],
+        ['kami/expression', 'Expression', undefined, false]
+    ], 'a parent comes before the groups nested in it, and a group without blocks anywhere is left out');
+    const cat = target('Cat', {opcodes: ['kami_cache', 'kami_cache', 'kami_ask', 'kami_page']});
+    assert.deepEqual(Object.fromEntries(usedGroups(cat, catalog)),
+        {'kami/assetcache': 2, 'kami/asyncinput': 1, 'kami/library': 3, kami: 1}, 'a parent counts the blocks of its groups');
+    const ids = catalog.groups.map(group => group.id);
+    assert.deepEqual(defaultVisibleGroups(cat, ids, catalog),
+        [...standardGroups, 'kami', 'kami/library', 'kami/assetcache', 'kami/asyncinput']);
+    assert.deepEqual(paletteGroupLineage('kami/asyncinput', catalog), ['kami/asyncinput', 'kami/library']);
+});
+
+test('a parent that is unknown, the group itself or part of a cycle is ignored', () => {
+    const runtime = libraryRuntime([
+        {id: 'assetcache', name: 'Asset Cache', parent: 'missing'},
+        {id: 'asyncinput', name: 'Async Input', parent: 'asyncinput'},
+        {id: 'a', name: 'A', parent: 'b'},
+        {id: 'b', name: 'B', parent: 'a'},
+        {id: 'expression', name: 'Expression', parent: 'a'}
+    ]);
+    const catalog = extensionPaletteCatalog(runtime._blockInfo);
+    assert.deepEqual(catalog.groups.map(group => [group.id, group.parent]), [
+        ['kami', undefined],
+        ['kami/assetcache', undefined],
+        ['kami/asyncinput', undefined],
+        ['kami/a', undefined],
+        ['kami/expression', 'kami/a']
+    ], 'the groups of a cycle stay at the top level, and a group nested in one of them stays nested');
+});
+
+test('without nesting, the toolbox shows the groups with blocks at the top level and leaves out an empty parent', () => {
+    const runtime = libraryRuntime([{id: 'library', name: 'Libraries'}, {id: 'assetcache', name: 'Asset Cache', parent: 'library'},
+        {id: 'asyncinput', name: 'Async Input', parent: 'library'}]);
+    const catalog = extensionPaletteCatalog(runtime._blockInfo);
+    const {window} = new JSDOM('');
+    const tree = new window.DOMParser().parseFromString('<xml><category id="kami" name="Kamishibai"><block type="kami_page"/>' +
+        '<block type="kami_cache"/><block type="kami_ask"/><block type="kami_expr"/></category></xml>', 'text/xml').documentElement;
+    filterToolboxTree(tree, new Set(['kami', 'kami/library', 'kami/assetcache', 'kami/asyncinput']), catalog);
+    assert.deepEqual([...tree.children].map(category => category.getAttribute('id')), ['kami', 'kami/assetcache', 'kami/asyncinput']);
 });

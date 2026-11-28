@@ -372,3 +372,41 @@ test('pinning a group shows its members after it in the palette that showed the 
     assert.deepEqual(order.capture(), {pinned: ['media']});
     controller.dispose();
 });
+
+test('a declared group with a parent is nested in its parent, which gets a category even without blocks of its own', () => {
+    const catalog = extensionPaletteCatalog([{
+        id: 'kami', name: 'Kamishibai',
+        paletteGroups: [{id: 'library', name: {en: 'Libraries', ja: 'ライブラリ'}}, {id: 'assetcache', name: 'Asset Cache', parent: 'library'},
+            {id: 'svg', name: 'SVG', parent: 'library'}, {id: 'text', name: 'SVG Text', parent: 'svg'}, {id: 'stage', name: 'Stage'}],
+        blocks: [
+            {info: {paletteGroup: 'stage'}, json: {type: 'kami_page'}},
+            {info: {paletteGroup: 'assetcache'}, json: {type: 'kami_cache'}},
+            {info: {paletteGroup: 'text'}, json: {type: 'kami_text'}}
+        ]
+    }], 'ja');
+    const source = '<xml><category id="motion"/><category id="kami" name="Kamishibai" showStatusButton="true">' +
+        '<block type="kami_page"/><label text="Cache"/><block type="kami_cache"/><block type="kami_text"/></category></xml>';
+    const {tree: nested} = parse(source);
+    splitExtensionCategories(nested, catalog, {nested: true});
+    const outline = (category: Element): unknown => [category.getAttribute('id') ?? category.getAttribute('type') ?? category.tagName,
+        ...Array.from(category.children).filter(child => child.tagName === 'category' || child.children.length).map(outline)];
+    assert.deepEqual(outline(nested.querySelector(':scope > category[id="kami"]')!),
+        ['kami', ['kami/library', ['kami/assetcache'], ['kami/svg', ['kami/text']]], ['kami/stage']]);
+    const library = nested.querySelector('category[id="kami/library"]')!;
+    assert.equal(library.getAttribute('name'), 'ライブラリ');
+    assert.equal(library.hasAttribute('showStatusButton'), false);
+    assert.deepEqual(Array.from(library.querySelector('category[id="kami/assetcache"]')!.children, child => child.tagName),
+        ['label', 'block'], 'a label goes with its block into the nested group');
+
+    const {tree} = parse(source);
+    const groups = prepareGroupedToolboxTree(tree, {catalog, visible: new Set(['motion', 'kami/stage', 'kami/text'])});
+    assert.deepEqual(topLevel(tree), ['motion', 'kami', 'kami/library<kami', 'kami/svg<kami/library', 'kami/text<kami/svg',
+        'kami/stage<kami'], 'a parent is kept while a group nested in it is shown, even when the parent is not chosen');
+    assert.deepEqual(Object.fromEntries(groups.members), {kami: ['kami/library', 'kami/stage'], 'kami/library': ['kami/svg'],
+        'kami/svg': ['kami/text']});
+    assert.equal(groups.withOwnContents.size, 0);
+
+    const {tree: hidden} = parse(source);
+    prepareGroupedToolboxTree(hidden, {catalog, visible: new Set(['motion', 'kami/library', 'kami/stage'])});
+    assert.deepEqual(topLevel(hidden), ['motion', 'kami', 'kami/stage<kami'], 'a parent whose groups are all hidden goes');
+});

@@ -11,9 +11,21 @@ export interface PaletteExtension {
     metadata: ExtensionMetadata;
     /**
      * The groups the extension declares, each chosen on its own, in place of the extension. A group whose ID is the
-     * extension's holds the blocks no declared group takes.
+     * extension's holds the blocks no declared group takes. A group with a `parent` is listed indented under that
+     * group, which comes before it. A group that is `empty` holds no blocks of its own: its checkbox shows and hides
+     * the groups nested in it, and it is shown whenever one of them is.
      */
-    groups?: readonly {id: string; name: string; color?: string}[];
+    groups?: readonly PaletteExtensionGroup[];
+}
+
+export interface PaletteExtensionGroup {
+    id: string;
+    name: string;
+    color?: string;
+    /** The ID of the group this one is nested in. */
+    parent?: string;
+    /** Whether the group holds no blocks of its own. */
+    empty?: boolean;
 }
 
 export interface PaletteVisibilityChoice {
@@ -93,7 +105,7 @@ interface DialogState {
 export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibilityDialogProps, DialogState> {
     constructor(props: PaletteVisibilityDialogProps) {
         super(props);
-        this.state = {shown: new Set(props.initial), addedSets: [], naming: false, setName: '', copySource: null, highlight: null};
+        this.state = {shown: this.normalize(new Set(props.initial)), addedSets: [], naming: false, setName: '', copySource: null, highlight: null};
     }
     get text() {
         return isJapanese(this.props.locale) ? messages.ja : messages.en;
@@ -107,16 +119,48 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
         return [...this.standard(), ...this.props.extensions.flatMap(extension =>
             extension.groups ? extension.groups.map(group => group.id) : [extension.id])];
     }
+    /** The groups the extensions declare, each followed by the groups nested in it. */
+    extensionGroups(): PaletteExtensionGroup[] {
+        return this.props.extensions.flatMap(extension => extension.groups ?? []);
+    }
+    /** The groups nested in the group, at any depth, that hold blocks. */
+    nestedWithBlocks(id: string): string[] {
+        const groups = this.extensionGroups();
+        const inside = (group: PaletteExtensionGroup): boolean => {
+            const parent = groups.find(item => item.id === group.parent);
+            return !!parent && (parent.id === id || inside(parent));
+        };
+        return groups.filter(group => !group.empty && inside(group)).map(group => group.id);
+    }
+    /** Shows a group without blocks of its own exactly when a group nested in it is shown. */
+    normalize(shown: Set<string>): Set<string> {
+        const groups = this.extensionGroups();
+        for (const group of [...groups].reverse()) {
+            if (!group.empty) continue;
+            if (groups.some(child => child.parent === group.id && shown.has(child.id))) shown.add(group.id);
+            else shown.delete(group.id);
+        }
+        return shown;
+    }
     available(groups: readonly string[]) {
         const offered = new Set<string>(this.offered());
         return groups.filter(group => offered.has(group));
     }
     toggle(group: string) {
+        const empty = this.extensionGroups().find(item => item.id === group)?.empty;
         this.setState(({shown}) => {
             const next = new Set(shown);
-            if (next.has(group)) next.delete(group);
+            if (empty) {
+                // A group without blocks of its own shows or hides the groups nested in it.
+                const nested = this.nestedWithBlocks(group);
+                const all = nested.every(id => next.has(id));
+                for (const id of nested) {
+                    if (all) next.delete(id);
+                    else next.add(id);
+                }
+            } else if (next.has(group)) next.delete(group);
             else next.add(group);
-            return {shown: next};
+            return {shown: this.normalize(next)};
         });
     }
     toggleSet(set: PaletteGroupSet) {
@@ -128,7 +172,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                 if (all) next.delete(group);
                 else next.add(group);
             }
-            return {shown: next};
+            return {shown: this.normalize(next)};
         });
     }
     addSet() {
@@ -146,7 +190,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
      */
     copy() {
         if (this.state.copySource === null || !this.props.copySources?.[this.state.copySource]) return;
-        this.setState({shown: new Set(this.copyGroups())});
+        this.setState({shown: this.normalize(new Set(this.copyGroups()))});
     }
     /** The groups of the chosen copy source this sprite can show, or none before one is chosen. */
     copyGroups() {
@@ -162,7 +206,9 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
         const text = this.text;
         const names = isJapanese(locale) ? standardNames.ja : standardNames.en;
         const sets = [...this.props.sets, ...this.state.addedSets];
-        const hiddenInUse = [...used].filter(([group, count]) => count > 0 && !shown.has(group)).length;
+        // A group without blocks of its own is hidden only with the groups nested in it, which are counted instead.
+        const empty = new Set(this.extensionGroups().filter(group => group.empty).map(group => group.id));
+        const hiddenInUse = [...used].filter(([group, count]) => count > 0 && !shown.has(group) && !empty.has(group)).length;
         // Under the pointer or focus first; otherwise, while a copy source is chosen, the groups it would choose.
         const highlight = this.state.highlight ?? (this.state.copySource !== null ? new Set(this.copyGroups()) : null);
         const highlighted = (group: string) => highlight?.has(group) ? 'true' : undefined;
@@ -177,6 +223,39 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
         const usedBadge = (group: string) => !shown.has(group) && (used.get(group) ?? 0) > 0 && (
             <span className="tw-palette-visibility-used">{text.used(used.get(group)!)}</span>
         );
+        const groupCheckbox = (group: PaletteExtensionGroup) => {
+            if (!group.empty) return <input type="checkbox" checked={shown.has(group.id)} onChange={() => this.toggle(group.id)} />;
+            const nested = this.nestedWithBlocks(group.id);
+            const all = nested.length > 0 && nested.every(id => shown.has(id));
+            const some = !all && nested.some(id => shown.has(id));
+            return (
+                <input type="checkbox" checked={all}
+                    ref={input => {if (input) input.indeterminate = some;}} onChange={() => this.toggle(group.id)} />
+            );
+        };
+        // Each group, and indented under it, the groups nested in it.
+        const groupRows = (extensionId: string, groups: readonly PaletteExtensionGroup[], parent?: string): React.ReactNode[] =>
+            groups.filter(group => parent === undefined ? !group.parent || !groups.some(item => item.id === group.parent) :
+                group.parent === parent).map(group => {
+                const label = (
+                    <label key={group.id} data-group={group.id} data-highlighted={highlighted(group.id)}>
+                        {groupCheckbox(group)}
+                        <span className="tw-palette-visibility-swatch" aria-hidden="true"
+                            style={{color: group.color}}>●</span>
+                        {group.id === extensionId ? text.otherBlocks : group.name}
+                        {usedBadge(group.id)}
+                    </label>
+                );
+                if (!groups.some(item => item.parent === group.id)) return label;
+                return (
+                    <div key={group.id} className="tw-palette-visibility-extension-group-tree" data-group-tree={group.id}>
+                        {label}
+                        <div className="tw-palette-visibility-extension-groups" role="group" data-group-parent={group.id}>
+                            {groupRows(extensionId, groups, group.id)}
+                        </div>
+                    </div>
+                );
+            });
         return (
             <div className="tw-palette-visibility">
                 <header className="tw-palette-visibility-header">
@@ -267,17 +346,7 @@ export class PaletteVisibilityDialog extends React.PureComponent<PaletteVisibili
                                         itemProps={{'data-extension': extension.id}}
                                     >
                                         <div className="tw-palette-visibility-extension-groups">
-                                            {extension.groups.map(group => (
-                                                <label key={group.id} data-group={group.id}
-                                                    data-highlighted={highlighted(group.id)}>
-                                                    <input type="checkbox" checked={shown.has(group.id)}
-                                                        onChange={() => this.toggle(group.id)} />
-                                                    <span className="tw-palette-visibility-swatch" aria-hidden="true"
-                                                        style={{color: group.color}}>●</span>
-                                                    {group.id === extension.id ? text.otherBlocks : group.name}
-                                                    {usedBadge(group.id)}
-                                                </label>
-                                            ))}
+                                            {groupRows(extension.id, extension.groups)}
                                         </div>
                                     </ExtensionRow>
                                 ) : (

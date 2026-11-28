@@ -130,3 +130,18 @@ getInfo() {
 - A label, separator or button goes with the block after it. The opcodes stay `shapes_circle` and so on, so the SB3 does not change: standard TurboWarp and Scratch ignore `groups` and `paletteGroup` and show one category.
 - The host calls `installExtensionPaletteGroups(vm.runtime)` before extensions load, and passes `extensionPaletteCatalog(vm.runtime._blockInfo)` to the store, `filterToolboxTree` and `usedGroups`. The dialog takes the groups of such an extension as `groups` of its entry and shows a checkbox for each inside the extension's row.
 
+A group can be nested in another group of the same extension with `parent`, the `id` of that group. A parent needs no blocks of its own, so a bundle can gather the groups of the extensions it carries under one group:
+
+```js
+groups: [
+    {id: 'library', name: {en: 'Libraries', ja: 'ライブラリ'}},
+    {id: 'assetcache', name: 'Asset Cache', parent: 'library'},
+    {id: 'asyncinput', name: 'Async Input', parent: 'library'}
+]
+```
+
+- For an extension with the ID `kami`, in the palette prepared with `prepareGroupedToolboxTree` (or the groups controller's `prepare`), `kami/library` becomes a category inside the extension's category, holding `kami/assetcache` and `kami/asyncinput`, and opens them as a child palette like any group; groups can be nested more than one level deep. A parent without blocks of its own gets a category as long as a group nested in it has blocks, and it stays in the palette while one of them is shown, even when the parent itself is not chosen.
+- `extensionPaletteCatalog` lists each parent before the groups nested in it, gives the nested ones `parent` (the parent's palette ID, such as `kami/library`), and marks a parent without blocks of its own `empty`. A parent with no blocks anywhere under it is left out. `usedGroups` counts the blocks of the nested groups for their parents too, so `defaultVisibleGroups` shows a parent whenever a group nested in it is in use; `paletteGroupLineage(id, catalog)` gives a group and the groups it is nested in.
+- The dialog takes `parent` and `empty` with each of the extension's `groups` and indents the nested ones under their parent. The checkbox of an `empty` parent shows or hides all the groups nested in it (half checked when only some are shown), and the parent is chosen exactly when one of them is.
+- A `parent` that names no other group of the extension, names the group itself or leads back to it in a cycle is ignored, and the group stays at the top level. `filterToolboxTree` without the grouped palette shows every group with blocks at the top level and leaves out a parent without blocks of its own.
+

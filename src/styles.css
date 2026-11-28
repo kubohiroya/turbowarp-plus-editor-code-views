@@ -1061,6 +1061,16 @@
     margin-top: 0.4rem;
 }
 
+/* A group that other groups are nested in takes a whole line, with the nested groups indented under it. */
+.tw-palette-visibility-extension-group-tree {
+    grid-column: 1 / -1;
+}
+
+.tw-palette-visibility-extension-group-tree > .tw-palette-visibility-extension-groups {
+    margin-top: 0.15rem;
+    padding-inline-start: 1.4rem;
+}
+
 .tw-palette-visibility-used {
     font-size: 0.75rem;
     color: var(--ui-warning, #b45309);
