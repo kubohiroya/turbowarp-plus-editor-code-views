@@ -676,7 +676,7 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             initial: currentLayouts(),
             onApply: keepLayouts,
             onCancel() {},
-            onAddExtension(saved) {
+            onManageExtensions(saved) {
                 keepLayouts(saved);
                 openExtensionLibrary();
             }

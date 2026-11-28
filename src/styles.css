@@ -1596,7 +1596,7 @@
     padding: 0.25rem 0.75rem 0.5rem;
 }
 
-.tw-bpe-add-extension {
+.tw-bpe-manage-extensions {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -1608,7 +1608,7 @@
     cursor: pointer;
 }
 
-.tw-bpe-add-extension:hover {
+.tw-bpe-manage-extensions:hover {
     border-color: var(--tw-bpe-accent);
 }
 

@@ -289,11 +289,11 @@ test('the default tab holds every source group in order, cannot be removed, and 
     await tabs.nth(1).click({button: 'right'});
     await expect(editor.getByRole('menuitem', {name: 'Remove'})).toHaveCount(1);
     await page.keyboard.press('Escape');
-    // Add Extension sits at the end of the first panel, outside its grid.
+    // Managing the extension set is at the end of the first panel, outside its grid.
     const source = (await editor.locator('.tw-bpe-source').boundingBox())!;
-    const add = (await editor.getByRole('button', {name: 'Add Extension'}).boundingBox())!;
+    const add = (await editor.getByRole('button', {name: 'Manage extension set'}).boundingBox())!;
     assert.ok(source.x + source.width - (add.x + add.width) < 24 && source.y + source.height - (add.y + add.height) < 24);
-    await expect(editor.locator('.tw-bpe-source-grid').getByRole('button', {name: 'Add Extension'})).toHaveCount(0);
+    await expect(editor.locator('.tw-bpe-source-grid').getByRole('button', {name: 'Manage extension set'})).toHaveCount(0);
     await shot(page, '9-default-tab');
     // The default tab chosen and saved, the palette shows every group in the first panel's order.
     await tabs.first().click();

@@ -38,8 +38,8 @@ export interface BlockPaletteEditorProps {
     initial?: SavedPaletteLayouts;
     onApply(saved: SavedPaletteLayouts): void;
     onCancel(): void;
-    /** Closes the editor, keeping the changes, and opens the extension library. */
-    onAddExtension?(saved: SavedPaletteLayouts): void;
+    /** Closes the editor, keeping the changes, and opens the host's screen that manages the project's extension set. */
+    onManageExtensions?(saved: SavedPaletteLayouts): void;
 }
 
 const messages = {
@@ -53,7 +53,7 @@ const messages = {
         extension: 'Extension', missing: 'Not available', emptyLayout: 'Drag block groups here from the panel above.',
         emptyLayoutVertical: 'Drag block groups here from the panel on the left.',
         emptyPreview: 'An empty palette shows every block group.', noLayouts: 'Add a palette with ＋ to start arranging.',
-        emptyFolder: 'Drop block groups here', addExtension: 'Add Extension', label: 'Label', resize: 'Drag to resize',
+        emptyFolder: 'Drop block groups here', manageExtensions: 'Manage extension set', label: 'Label', resize: 'Drag to resize',
         omitted: {missing: 'Not in the palette: not available',
             empty: 'Not in the palette: the folder is empty', separator: 'Not in the palette: nothing to separate'} as Record<PaletteLayoutOmission, string>,
         savedAs: 'Saving makes this preview the block palette.', keptOpen: 'Blocks kept open',
@@ -70,7 +70,7 @@ const messages = {
         extension: '機能拡張', missing: '見つかりません', emptyLayout: '上のパネルからブロックグループをここへドラッグします。',
         emptyLayoutVertical: '左のパネルからブロックグループをここへドラッグします。',
         emptyPreview: '空のパレットでは、すべてのブロックグループを表示します。', noLayouts: '＋でパレットを追加して並べ始めます。',
-        emptyFolder: 'ここへブロックグループをドロップ', addExtension: '機能拡張を追加', label: 'ラベル', resize: 'ドラッグで大きさを変える',
+        emptyFolder: 'ここへブロックグループをドロップ', manageExtensions: '機能拡張セットの管理', label: 'ラベル', resize: 'ドラッグで大きさを変える',
         omitted: {missing: 'パレットには出ません：見つかりません',
             empty: 'パレットには出ません：フォルダが空です', separator: 'パレットには出ません：区切る相手がありません'} as Record<PaletteLayoutOmission, string>,
         savedAs: '保存すると、このプレビューがブロックパレットになります。', keptOpen: '開いたままのブロック',
@@ -595,11 +595,11 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
                         );
                     })}
                 </div>
-                {this.props.onAddExtension && (
+                {this.props.onManageExtensions && (
                     <div className="tw-bpe-source-end">
-                        <button type="button" className="tw-bpe-add-extension"
-                            onClick={() => this.props.onAddExtension!(this.result())}>
-                            <span aria-hidden="true">＋</span>{text.addExtension}
+                        <button type="button" className="tw-bpe-manage-extensions"
+                            onClick={() => this.props.onManageExtensions!(this.result())}>
+                            <span aria-hidden="true">⚙</span>{text.manageExtensions}
                         </button>
                     </div>
                 )}
@@ -1105,9 +1105,9 @@ export function openBlockPaletteEditor(document: Document, props: BlockPaletteEd
             close();
             props.onCancel();
         },
-        onAddExtension: props.onAddExtension && (saved => {
+        onManageExtensions: props.onManageExtensions && (saved => {
             close();
-            props.onAddExtension!(saved);
+            props.onManageExtensions!(saved);
         })
     }), dialog);
     if (typeof dialog.showModal === 'function') dialog.showModal();
