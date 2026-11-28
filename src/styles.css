@@ -1599,17 +1599,24 @@
 .tw-bpe-manage-extensions {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.75rem;
-    border: 1px dashed var(--tw-bpe-line);
+    gap: 0.4rem;
+    padding: 0.4rem 0.95rem;
+    border: none;
     border-radius: 1rem;
-    background: transparent;
-    color: inherit;
+    background: var(--tw-bpe-accent);
+    box-shadow: 0 1px 3px #0003;
+    color: #fff;
+    font-weight: 600;
     cursor: pointer;
 }
 
 .tw-bpe-manage-extensions:hover {
-    border-color: var(--tw-bpe-accent);
+    background: color-mix(in srgb, var(--tw-bpe-accent) 85%, #000);
+}
+
+.tw-bpe-manage-extensions:focus-visible {
+    outline: 2px solid var(--tw-bpe-accent);
+    outline-offset: 2px;
 }
 
 .tw-bpe-layout-note {
