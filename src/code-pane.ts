@@ -88,7 +88,9 @@ export function createCodePaneAdapter(vm, locale: string, attachMinimap?: Attach
             getVisibility,
             setVisibility(paneId: string, value: ScriptRelationVisibility) {
                 const before = getVisibility(paneId);
-                if (before.function === value.function && before.message === value.message) return;
+                // `reference` is optional: an omitted value and an explicit one are different settings.
+                if (before.function === value.function && before.message === value.message &&
+                    before.reference === value.reference) return;
                 visibilities.set(paneId, {...value});
                 if (current === paneId) setDockedRelationVisibility(vm, value);
                 for (const listener of visibilityListeners) listener();
