@@ -32,7 +32,18 @@ export interface ScriptRelationBlockDeclaration {
     /** This block is a destination for references in `channel` whose `argument` value equals its own. */
     targets?: readonly {channel: string; argument: string}[];
     /** This block refers, through `argument`, to the blocks declared as targets of `channel`. */
-    references?: readonly {channel: string; argument: string}[];
+    references?: readonly ScriptRelationReferenceDeclaration[];
+}
+
+export interface ScriptRelationReferenceDeclaration {
+    channel: string;
+    argument: string;
+    /**
+     * Read several references from a JSON object in the argument instead of its whole text. The first
+     * path that names an object is used (`[]` is the root), and each of its string property values is
+     * one reference, labelled `key → value`. Other values are ignored.
+     */
+    json?: {objectPaths: readonly (readonly string[])[]};
 }
 
 interface RelationBlockInfo {
@@ -128,7 +139,7 @@ function append<K, V>(map: Map<K, V[]>, key: K, value: V) {
     else map.set(key, [value]);
 }
 
-type Declared = {channel: string; argument: string};
+type Declared = {channel: string; argument: string; json?: {objectPaths: string[][]}};
 type DeclarationIndex = {
     targets: Map<string, Declared[]>;
     references: Map<string, Declared[]>;
@@ -144,7 +155,37 @@ function declarations(value: unknown, key: 'targets' | 'references'): Declared[]
     return list.filter((entry): entry is Declared => Boolean(entry) && typeof entry === 'object' &&
         typeof entry.channel === 'string' && relationChannel.test(entry.channel) &&
         typeof entry.argument === 'string' && relationArgument.test(entry.argument))
-        .map(({channel, argument}) => ({channel, argument}));
+        .map(({channel, argument, json}) => {
+            const paths = key === 'references' && json && typeof json === 'object' &&
+                Array.isArray((json as {objectPaths?: unknown}).objectPaths) ?
+                (json as {objectPaths: unknown[]}).objectPaths.filter((path): path is string[] => Array.isArray(path) &&
+                    path.length <= 8 && path.every(part => typeof part === 'string')).slice(0, 8) : undefined;
+            return paths?.length ? {channel, argument, json: {objectPaths: paths.map(path => [...path])}} : {channel, argument};
+        });
+}
+
+const jsonReferenceLimit = 64 * 1024;
+
+/** The `key → value` pairs of the first declared object path; undefined when the text is not such JSON. */
+function jsonReferences(text: string, objectPaths: string[][]): {key: string; value: string}[] | undefined {
+    if (text.length > jsonReferenceLimit) return undefined;
+    let root: unknown;
+    try {
+        root = JSON.parse(text);
+    } catch {
+        return undefined;
+    }
+    const isObject = (value: unknown): value is Record<string, unknown> =>
+        Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+    for (const path of objectPaths) {
+        let current: unknown = root;
+        for (const part of path) current = isObject(current) && Object.hasOwn(current, part) ? current[part] : undefined;
+        if (isObject(current)) {
+            return Object.entries(current).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+                .map(([key, value]) => ({key, value}));
+        }
+    }
+    return undefined;
 }
 
 /** Dropdown options as Blockly would show them; a dynamic menu is the same function the dropdown calls. */
@@ -252,15 +293,27 @@ function readDeclaredRelations(programs: readonly Program[]): ScriptRelation[] {
             if (!declared) continue;
             const source = endpoint(block.id);
             if (!source) continue;
-            for (const {channel, argument} of declared) {
+            for (const {channel, argument, json} of declared) {
                 const {value, unresolved} = declaredArgument(block, blocks, argument);
-                const label = value === undefined ? '' : index.label(block.opcode, argument, value);
-                const relation = {kind: 'reference' as const, source, label, wait: true};
-                const matches = value === undefined ? [] : (destinations.get(`${channel}\u0000${value}`) ?? [])
-                    .filter(destination => destination.targetId !== source.targetId || destination.blockId !== source.blockId);
-                if (unresolved) relations.push({...relation, unresolved});
-                else if (!matches.length) relations.push({...relation, unresolved: 'missing'});
-                else for (const destination of matches) relations.push({...relation, destination});
+                const base = {kind: 'reference' as const, source, wait: true};
+                if (unresolved || value === undefined) {
+                    relations.push({...base, label: '', unresolved: unresolved ?? 'missing'});
+                    continue;
+                }
+                const pairs = json ? jsonReferences(value, json.objectPaths) : undefined;
+                if (json && !pairs) {
+                    relations.push({...base, label: '', unresolved: 'missing'});
+                    continue;
+                }
+                const references = pairs ? pairs.map(pair => ({value: pair.value, label: `${pair.key} → ${pair.value}`})) :
+                    [{value, label: index.label(block.opcode, argument, value)}];
+                for (const reference of references) {
+                    const relation = {...base, label: reference.label};
+                    const matches = (destinations.get(`${channel}\u0000${reference.value}`) ?? [])
+                        .filter(destination => destination.targetId !== source.targetId || destination.blockId !== source.blockId);
+                    if (!matches.length) relations.push({...relation, unresolved: 'missing'});
+                    else for (const destination of matches) relations.push({...relation, destination});
+                }
             }
         }
     }

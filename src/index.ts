@@ -15,6 +15,7 @@ export {encodeEdit} from './protocol.ts';
 export {fitScriptInWorkspace} from './script-fit.ts';
 export {readScriptRelations, registerScriptRelationResolver} from './script-relations.ts';
 export type {ScriptEndpoint, ScriptRelation, ScriptRelationKind, ScriptRelationBlockDeclaration, ScriptRelationProgram,
+    ScriptRelationReferenceDeclaration,
     ScriptRelationResolver} from './script-relations.ts';
 
 // A drop must stay within one target's block and comment history.

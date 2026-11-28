@@ -217,3 +217,32 @@ test('registered and per-call resolvers add relations, and a failing resolver ke
     }
     assert.deepEqual(readScriptRelations([sprite]).map(relation => relation.kind), ['message']);
 });
+
+test('a JSON argument declares one reference per string value of the first object path that exists', () => {
+    const routes = {channel: 'example.scene', argument: 'ROUTES', json: {objectPaths: [['routes'], []]}};
+    const runtime = {_blockInfo: [{blocks: [
+        {info: {scriptRelations: {targets: [{channel: 'example.scene', argument: 'SCENE'}]}}, json: {type: 'ext_scene'}},
+        {info: {scriptRelations: {references: [routes]}}, json: {type: 'ext_keyRoutes'}}
+    ]}]};
+    const scene = (id: string, name: string) => [
+        block(id, 'ext_scene', {topLevel: true, inputs: {SCENE: input(`${id}-name`)}}),
+        block(`${id}-name`, 'text', {parent: id, shadow: true, fields: {TEXT: field(name)}})
+    ];
+    const keyRoutes = (id: string, json: string) => [
+        block(id, 'ext_keyRoutes', {topLevel: true, inputs: {ROUTES: input(`${id}-routes`)}}),
+        block(`${id}-routes`, 'text', {parent: id, shadow: true, fields: {TEXT: field(json)}})
+    ];
+    const stage = target('stage', [...scene('opening', 'opening'), ...scene('ending', 'ending'),
+        ...keyRoutes('flat', '{"Space":"ending","ArrowLeft":"opening","Enter":"lost","x":3}'),
+        ...keyRoutes('nested', '{"stableId":"opening","routes":{"Space":"ending"}}'),
+        ...keyRoutes('broken', '{"Space":'), ...keyRoutes('array', '["ending"]')], {runtime});
+    assert.deepEqual(readScriptRelations([stage]).map(({source, destination, label, unresolved}) =>
+        [source.blockId, destination?.blockId, label, unresolved]), [
+        ['flat', 'ending', 'Space → ending', undefined],
+        ['flat', 'opening', 'ArrowLeft → opening', undefined],
+        ['flat', undefined, 'Enter → lost', 'missing'],
+        ['nested', 'ending', 'Space → ending', undefined],
+        ['broken', undefined, '', 'missing'],
+        ['array', undefined, '', 'missing']
+    ]);
+});
