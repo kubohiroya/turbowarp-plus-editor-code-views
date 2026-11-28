@@ -52,8 +52,8 @@ function fixture() {
 test('disposing one host restores its VM and leaves another editor host attached', () => {
     const first = fixture();
     const second = fixture();
-    const secondDuplicate = second.vm.duplicateSprite;
-    assert.notEqual(first.vm.duplicateSprite, first.original.duplicate);
+    const secondShare = second.vm.shareBlocksToTarget;
+    assert.notEqual(first.vm.shareBlocksToTarget, first.original.share);
     first.stop();
     assert.equal(first.vm.duplicateSprite, first.original.duplicate);
     assert.equal(first.vm.addSprite, first.original.add);
@@ -61,40 +61,56 @@ test('disposing one host restores its VM and leaves another editor host attached
     assert.equal(first.vm.shareBlocksToTargetWithReceipt, first.original.shareWithReceipt);
     assert.equal(first.registrations(), 0);
     assert.equal(first.runtimeListeners.size + first.vmListeners.size, 0);
-    assert.equal(second.vm.duplicateSprite, secondDuplicate);
+    assert.equal(second.vm.shareBlocksToTarget, secondShare);
     assert.equal(second.registrations(), 1);
     assert.equal(second.runtimeListeners.has('PROJECT_LOADED'), true);
     second.stop();
     assert.equal(second.registrations(), 0);
 });
 
-const seedVisibility = ({slice}) => slice.applyFolderUpdate({version: 1,
-    stage: {groups: ['events']}, sprites: {Sprite: {groups: ['events']}}});
+const seedLayout = ({slice}) => slice.applyFolderUpdate({version: 1, layouts: {active: 'story', layouts: [
+    {id: 'story', name: 'Story', items: [{kind: 'group', key: 'a', ref: 'events', mode: 'auto'}]},
+    {id: 'other', name: 'Other', items: [{kind: 'group', key: 'b', ref: 'looks', mode: 'open'}]}
+]}});
+const refs = (app, id = 'story') => app.slice.capture().layouts.layouts.find(layout => layout.id === id).items
+    .map(item => item.ref);
 
-test('an imported stack only enables the groups of transferred blocks on its destination', async t => {
+test('an imported stack adds the groups of transferred blocks to the shown palette layout', async t => {
     const app = fixture();
     t.after(app.stop);
-    seedVisibility(app);
+    seedLayout(app);
     app.sprite.blocks._blocks.old = {opcode: 'looks_show'};
     const result = await app.vm.shareBlocksToTarget({
-        blocks: [{opcode: 'pen_clear'}, {opcode: 'sound_stopallsounds', shadow: true}], extensionURLs: {}
+        blocks: [{opcode: 'pen_clear'}, {opcode: 'sound_stopallsounds', shadow: true}, {opcode: 'event_whenflagclicked'}],
+        extensionURLs: {}
     }, app.sprite.id);
     assert.equal(result, 'legacy result');
-    assert.deepEqual(app.slice.capture().sprites.Sprite.groups, ['events', 'pen']);
-    assert.deepEqual(app.slice.capture().stage.groups, ['events']);
+    assert.deepEqual(refs(app), ['events', 'pen']);
+    assert.deepEqual(refs(app, 'other'), ['looks']);
     assert.equal(app.changed.count, 1);
 });
 
-test('a transfer receipt enables only the committed groups and a cancelled transfer keeps its settings', async t => {
+test('a transfer receipt adds only the committed groups and a cancelled transfer keeps the layout', async t => {
     const app = fixture();
     t.after(app.stop);
-    seedVisibility(app);
+    seedLayout(app);
     const blocks = [{opcode: 'pen_clear'}];
     assert.equal(await app.vm.shareBlocksToTargetWithReceipt(blocks, app.sprite.id, {prepare: () => false}), null);
-    assert.deepEqual(app.slice.capture().sprites.Sprite.groups, ['events']);
+    assert.deepEqual(refs(app), ['events']);
     assert.equal(app.changed.count, 0);
     const receipt = await app.vm.shareBlocksToTargetWithReceipt(blocks, app.sprite.id);
     assert.deepEqual(receipt?.blockIds, ['1']);
-    assert.deepEqual(app.slice.capture().sprites.Sprite.groups, ['events', 'pen']);
+    assert.deepEqual(refs(app), ['events', 'pen']);
     assert.equal(app.changed.count, 1);
+});
+
+test('an extension added from the library joins the shown layout, and nothing changes without one', t => {
+    const app = fixture();
+    t.after(app.stop);
+    app.runtimeListeners.get('EXTENSION_ADDED')({id: 'pen'});
+    assert.equal(app.slice.capture(), undefined);
+    seedLayout(app);
+    app.runtimeListeners.get('EXTENSION_ADDED')({id: 'pen'});
+    app.runtimeListeners.get('EXTENSION_ADDED')({id: 'pen'});
+    assert.deepEqual(refs(app), ['events', 'pen']);
 });

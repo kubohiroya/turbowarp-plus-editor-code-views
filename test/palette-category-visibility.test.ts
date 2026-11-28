@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
 import {attachPaletteMenuButton, createPaletteVisibilityStore, defaultVisibleGroups, extensionPaletteCatalog, filterToolboxTree, groupOfOpcode,
-    installExtensionPaletteGroups, paletteGroupLineage, paletteGroupSets, resolveGroupName, paletteVisibilityMenuLabel, standardGroups, usedGroups} from '../dist/palette-category-visibility.js';
+    installExtensionPaletteGroups, paletteGroupLineage, paletteGroupSets, resolveGroupName, standardGroups, usedGroups} from '../dist/palette-category-visibility.js';
 
 function target(name, {isStage = false, opcodes = [], id = name} = {}) {
     const blocks = Object.fromEntries(opcodes.map((opcode, index) => [`b${index}`, {opcode, shadow: opcode.endsWith('_menu')}]));
@@ -228,7 +228,7 @@ test('the ▼ button sits after the categories and lists the host items without 
     const chosen = [];
     let locale = 'ja';
     const attached = attachPaletteMenuButton(menu, () => locale, current => [
-        {label: paletteVisibilityMenuLabel(current), onSelect: () => chosen.push('groups')},
+        {label: /^ja/.test(current) ? 'ブロックグループ' : 'Block groups', onSelect: () => chosen.push('groups')},
         {label: current === 'ja' ? '機能拡張を追加' : 'Add extension', separated: true, onSelect: () => chosen.push('extension')}
     ]);
     const {button} = attached;
@@ -240,7 +240,7 @@ test('the ▼ button sits after the categories and lists the host items without 
     assert.equal(presses, 0);
     assert.equal(button.getAttribute('aria-expanded'), 'true');
     const items = () => [...document.querySelectorAll('.tw-palette-menu [role="menuitem"]')];
-    assert.deepEqual(items().map(item => item.textContent), ['ブロックグループの表示・非表示の設定', '機能拡張を追加']);
+    assert.deepEqual(items().map(item => item.textContent), ['ブロックグループ', '機能拡張を追加']);
     assert.equal(document.querySelectorAll('.tw-palette-menu [role="separator"]').length, 1);
     assert.equal(document.activeElement, items()[0]);
     document.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'ArrowDown'}));
@@ -265,6 +265,25 @@ test('the ▼ button sits after the categories and lists the host items without 
     assert.equal(button.title, 'Palette menu');
     attached.dispose();
     assert.equal(menu.querySelector('button'), null);
+});
+
+test('with onPress the ▼ button opens the block palette editor directly instead of a menu', () => {
+    const {window} = new JSDOM('<body><div id="menu"></div></body>');
+    const document = window.document;
+    const menu = document.getElementById('menu');
+    let opened = 0;
+    let locale = 'ja';
+    const attached = attachPaletteMenuButton(menu, () => locale, () => [], () => {opened++;});
+    const {button} = attached;
+    assert.equal(button.getAttribute('aria-haspopup'), 'dialog');
+    assert.equal(button.getAttribute('aria-label'), 'ブロックパレットエディタを開く');
+    button.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    assert.equal(opened, 1);
+    assert.equal(document.querySelector('.tw-palette-menu'), null);
+    locale = 'en';
+    attached.update();
+    assert.equal(button.title, 'Open the block palette editor');
+    attached.dispose();
 });
 
 /** A runtime with the Kamishibai-style library: an empty parent group holding the groups of bundled extensions. */
