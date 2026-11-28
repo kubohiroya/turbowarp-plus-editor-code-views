@@ -45,9 +45,18 @@ test('arrow filters belong to each code pane and survive saved workspace restore
     assert.equal(adapter.relations.getVisibility(pane().id).message, true, 'callers cannot mutate stored settings');
     adapter.relations.setVisibility(pane().id, {function: false, message: true});
     assert.equal(notifications, 1, 'unchanged filters do not repaint other previews');
+    // Changing only the reference filter is a change: the docked arrows and the saved pane follow it.
+    adapter.relations.setVisibility(pane().id, {function: false, message: true, reference: false});
+    assert.equal(notifications, 2);
+    assert.deepEqual(getDockedRelationVisibility(vm), {function: false, message: true, reference: false});
+    assert.deepEqual(adapter.serialize(pane()).relationVisibility, {function: false, message: true, reference: false});
+    adapter.relations.setVisibility(pane().id, {function: false, message: true, reference: false});
+    assert.equal(notifications, 2, 'an unchanged reference filter does not repaint either');
+    adapter.relations.setVisibility(pane().id, {function: false, message: true});
+    assert.equal(notifications, 3, 'going back to following the other kinds is also a change');
     unsubscribe();
     adapter.relations.setVisibility(other.id, {function: true, message: false});
-    assert.equal(notifications, 1);
+    assert.equal(notifications, 3);
     adapter.forgetPane(pane().id);
     assert.deepEqual(adapter.relations.getVisibility(pane().id), {function: true, message: true});
 });
