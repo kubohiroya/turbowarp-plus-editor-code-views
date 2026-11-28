@@ -523,6 +523,7 @@
 :root {
     --tw-script-function-stroke: light-dark(#7051c7, #c9abff);
     --tw-script-message-stroke: light-dark(#a85a00, #ffbd66);
+    --tw-script-reference-stroke: light-dark(#00838f, #4dd8e6);
 }
 
 .tw-workspace-overview {
@@ -571,6 +572,13 @@
     --tw-script-relation-dash: 3.5 2.5;
 }
 
+/* Declared references are not control flow: a separate hue and a heavier dash-dot keep them apart. */
+[data-script-relation="reference"] {
+    --tw-script-relation-stroke: var(--tw-script-reference-stroke);
+    --tw-script-relation-dash: 10 3 2 3;
+    --tw-script-relation-width: 2.6;
+}
+
 [data-script-relation-layer] {
     pointer-events: none;
 }
@@ -578,7 +586,7 @@
 .tw-script-relation-line, .tw-script-relation-head {
     fill: none;
     stroke: var(--tw-script-relation-stroke);
-    stroke-width: 1.8;
+    stroke-width: var(--tw-script-relation-width, 1.8);
     stroke-opacity: 0.2;
     vector-effect: non-scaling-stroke;
     pointer-events: none;
@@ -589,7 +597,7 @@
 }
 
 [data-script-relation][data-highlighted] :is(.tw-script-relation-line, .tw-script-relation-head) {
-    stroke-width: 3;
+    stroke-width: calc(var(--tw-script-relation-width, 1.8) + 1.2);
     stroke-opacity: 1;
 }
 
@@ -668,6 +676,11 @@
     border-block-start-style: dashed;
 }
 
+.tw-script-relation-destinations [data-script-relation="reference"]::before {
+    border-block-start-width: 3px;
+    border-block-start-style: dotted;
+}
+
 .tw-script-relation-destinations {
     max-block-size: 9rem;
     overflow: auto;
@@ -693,6 +706,7 @@
     :root {
         --tw-script-function-stroke: CanvasText;
         --tw-script-message-stroke: CanvasText;
+        --tw-script-reference-stroke: CanvasText;
     }
 }
 

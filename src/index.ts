@@ -13,8 +13,9 @@ export type {NativeFieldEditSession} from './native-extension-field.ts';
 export type {FieldActionPanel, ProgrammaticExtensionField} from './programmatic-extension-field.ts';
 export {encodeEdit} from './protocol.ts';
 export {fitScriptInWorkspace} from './script-fit.ts';
-export {readScriptRelations} from './script-relations.ts';
-export type {ScriptEndpoint, ScriptRelation} from './script-relations.ts';
+export {readScriptRelations, registerScriptRelationResolver} from './script-relations.ts';
+export type {ScriptEndpoint, ScriptRelation, ScriptRelationKind, ScriptRelationBlockDeclaration, ScriptRelationProgram,
+    ScriptRelationResolver} from './script-relations.ts';
 
 // A drop must stay within one target's block and comment history.
 const supportsSharedHistory = script => !script.variables.length && !script.extensionIDs?.length &&

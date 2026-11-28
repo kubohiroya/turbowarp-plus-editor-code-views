@@ -168,9 +168,10 @@ export function openSemanticLayout(context: SemanticLayoutContext, locale: strin
             const line = document.createElementNS(ns, 'path');
             const middle = Math.max(from.x + 32, (from.x + to.x) / 2);
             line.setAttribute('d', `M ${from.x} ${from.y} C ${middle} ${from.y} ${middle} ${to.y} ${to.x} ${to.y}`);
-            line.setAttribute('fill', 'none'); line.setAttribute('stroke', edge.kind === 'function' ? '#b65be6' : '#ba8a00');
+            line.setAttribute('fill', 'none'); line.setAttribute('stroke', edge.kind === 'function' ? '#b65be6' : edge.kind === 'reference' ? '#00838f' : '#ba8a00');
             line.setAttribute('stroke-width', '2');
             if (edge.kind === 'message') line.setAttribute('stroke-dasharray', edge.wait ? '7 5' : '3.5 2.5');
+            if (edge.kind === 'reference') line.setAttribute('stroke-dasharray', '10 3 2 3');
             const head = document.createElementNS(ns, 'path');
             head.setAttribute('d', `M ${to.x - 7} ${to.y - 4} L ${to.x} ${to.y} L ${to.x - 7} ${to.y + 4}`);
             head.setAttribute('fill', 'none'); head.setAttribute('stroke', line.getAttribute('stroke'));
