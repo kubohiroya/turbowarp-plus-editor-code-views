@@ -60,6 +60,13 @@ test('saved arrow filters only accept booleans and copy the supplied values', ()
     const saved = readSavedCodePane({scale: 1, x: 0, y: 0, relationVisibility});
     relationVisibility.function = true;
     assert.deepEqual(saved.relationVisibility, {function: false, message: false});
+    // The reference filter is optional: a boolean is kept, anything else is dropped so it follows the others.
+    assert.deepEqual(readSavedCodePane({scale: 1, x: 0, y: 0,
+        relationVisibility: {function: true, message: false, reference: false}}).relationVisibility,
+    {function: true, message: false, reference: false});
+    assert.deepEqual(readSavedCodePane({scale: 1, x: 0, y: 0,
+        relationVisibility: {function: true, message: false, reference: 'no'}}).relationVisibility,
+    {function: true, message: false});
 });
 
 test('the calls panel receives named script endpoints without mixing the same block id in different sprites', () => {

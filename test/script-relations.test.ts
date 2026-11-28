@@ -138,3 +138,111 @@ test('malformed parent cycles and dangling parents stop traversal without invent
         block('cycle-two', 'control_repeat', {parent: 'cycle-one'}), call('dangling', 'jump', 'absent'), call('valid', 'jump')]);
     assert.deepEqual(readScriptRelations([sprite]).map(relation => relation.source.blockId), ['valid']);
 });
+
+const yamlOpcode = (operation: string) => `kamishibai_${operation}`;
+const declaredRuntime = (dynamicMenu?: () => [string, string][]) => ({_blockInfo: [{
+    blocks: [
+        {info: {opcode: 'documentHat', scriptRelations: {targets: [{channel: 'example.document', argument: 'DOCUMENT'}]}},
+            json: {type: yamlOpcode('documentHat'), args0: [{type: 'field_dropdown', name: 'DOCUMENT', options: dynamicMenu ?? [['story.yml', 'doc:story']]}]}},
+        {info: {opcode: 'documentRoot', scriptRelations: {references: [{channel: 'example.document', argument: 'DOCUMENT'}]}},
+            json: {type: yamlOpcode('documentRoot'), args0: [{type: 'field_dropdown', name: 'DOCUMENT', options: dynamicMenu ?? [['story.yml', 'doc:story']]}]}},
+        {info: {opcode: 'include', arguments: {DOCUMENT: {menu: 'includes'}},
+            scriptRelations: {references: [{channel: 'example.document', argument: 'DOCUMENT'}]}},
+            json: {type: yamlOpcode('include'), args0: [{type: 'input_value', name: 'DOCUMENT'}]}},
+        {info: {opcode: 'scene', scriptRelations: {targets: [{channel: 'example.scene', argument: 'SCENE'}]}},
+            json: {type: yamlOpcode('scene')}},
+        {info: {opcode: 'goto', scriptRelations: {references: [{channel: 'example.scene', argument: 'SCENE'}, {channel: 'bad channel!', argument: 'SCENE'}]}},
+            json: {type: yamlOpcode('goto')}},
+        {info: {}, xml: '<button/>'}
+    ],
+    menus: [{json: {type: yamlOpcode('menu_includes'), args0: [{type: 'field_dropdown', name: 'includes', options: () => [['part.yml', 'doc:part']]}]}}]
+}]});
+const documentHat = (id: string, value: string) =>
+    block(id, yamlOpcode('documentHat'), {topLevel: true, fields: {DOCUMENT: field(value)}});
+
+test('extension blocks declare references by channel, including blocks inside a script and fan-out', () => {
+    const runtime = declaredRuntime();
+    const stage = target('stage', [
+        block('root', yamlOpcode('documentRoot'), {topLevel: true, fields: {DOCUMENT: field('doc:story')}}),
+        documentHat('story', 'doc:story'),
+        block('include', yamlOpcode('include'), {parent: 'story', inputs: {DOCUMENT: input('include-menu')}}),
+        block('include-menu', yamlOpcode('menu_includes'), {parent: 'include', shadow: true, fields: {includes: field('doc:part')}}),
+        block('scene', yamlOpcode('scene'), {parent: 'include', inputs: {SCENE: input('scene-name')}}),
+        block('scene-name', 'text', {parent: 'scene', shadow: true, fields: {TEXT: field('opening')}})
+    ], {runtime});
+    const sprite = target('sprite', [documentHat('part', 'doc:part'), documentHat('part-copy', 'doc:part'),
+        block('flag', 'event_whenflagclicked', {topLevel: true}),
+        block('goto', yamlOpcode('goto'), {parent: 'flag', inputs: {SCENE: input('goto-name')}}),
+        block('goto-name', 'text', {parent: 'goto', shadow: true, fields: {TEXT: field('opening')}})], {runtime});
+    const relations = readScriptRelations([stage, sprite]);
+    assert.deepEqual(relations.map(({kind, source, destination, label, unresolved}) =>
+        [kind, source.blockId, destination?.targetId, destination?.blockId, destination?.scriptId, label, unresolved]), [
+        ['reference', 'root', 'stage', 'story', 'story', 'story.yml', undefined],
+        ['reference', 'include', 'sprite', 'part', 'part', 'part.yml', undefined],
+        ['reference', 'include', 'sprite', 'part-copy', 'part-copy', 'part.yml', undefined],
+        ['reference', 'goto', 'stage', 'scene', 'story', 'opening', undefined]
+    ]);
+});
+
+test('declared references report computed and missing values without executing a failing menu', () => {
+    const runtime = declaredRuntime(() => { throw new Error('menu unavailable'); });
+    const stage = target('stage', [
+        documentHat('story', 'doc:story'),
+        block('root', yamlOpcode('documentRoot'), {topLevel: true, fields: {DOCUMENT: field('doc:other')}}),
+        block('goto', yamlOpcode('goto'), {topLevel: true, inputs: {SCENE: {block: 'reporter', shadow: 'goto-name'}}}),
+        block('reporter', 'operator_join', {parent: 'goto'}),
+        block('goto-name', 'text', {parent: 'goto', shadow: true, fields: {TEXT: field('opening')}}),
+        block('empty', yamlOpcode('goto'), {topLevel: true})
+    ], {runtime});
+    assert.deepEqual(readScriptRelations([stage]).map(({source, label, unresolved}) => [source.blockId, label, unresolved]), [
+        ['root', 'doc:other', 'missing'], ['goto', '', 'dynamic'], ['empty', '', 'missing']
+    ]);
+    // Without a runtime or declarations, extension blocks contribute nothing.
+    assert.deepEqual(readScriptRelations([{...stage, runtime: undefined}]), []);
+});
+
+test('registered and per-call resolvers add relations, and a failing resolver keeps the others', async () => {
+    const {registerScriptRelationResolver} = await import('../src/script-relations.ts');
+    const sprite = target('sprite', [receive('hat', 'go'), ...send('send', 'go')]);
+    const unregister = registerScriptRelationResolver({resolve: programs => programs.flatMap(({endpoint}) => {
+        const source = endpoint('send');
+        const destination = endpoint('hat');
+        return source && destination ? [{kind: 'reference' as const, source, destination, label: 'extra', wait: true}] : [];
+    })});
+    try {
+        const relations = readScriptRelations([sprite], {resolvers: [{resolve() { throw new Error('broken'); }}]});
+        assert.deepEqual(relations.map(relation => [relation.kind, relation.label]), [['message', 'go'], ['reference', 'extra']]);
+    } finally {
+        unregister();
+    }
+    assert.deepEqual(readScriptRelations([sprite]).map(relation => relation.kind), ['message']);
+});
+
+test('a JSON argument declares one reference per string value of the first object path that exists', () => {
+    const routes = {channel: 'example.scene', argument: 'ROUTES', json: {objectPaths: [['routes'], []]}};
+    const runtime = {_blockInfo: [{blocks: [
+        {info: {scriptRelations: {targets: [{channel: 'example.scene', argument: 'SCENE'}]}}, json: {type: 'ext_scene'}},
+        {info: {scriptRelations: {references: [routes]}}, json: {type: 'ext_keyRoutes'}}
+    ]}]};
+    const scene = (id: string, name: string) => [
+        block(id, 'ext_scene', {topLevel: true, inputs: {SCENE: input(`${id}-name`)}}),
+        block(`${id}-name`, 'text', {parent: id, shadow: true, fields: {TEXT: field(name)}})
+    ];
+    const keyRoutes = (id: string, json: string) => [
+        block(id, 'ext_keyRoutes', {topLevel: true, inputs: {ROUTES: input(`${id}-routes`)}}),
+        block(`${id}-routes`, 'text', {parent: id, shadow: true, fields: {TEXT: field(json)}})
+    ];
+    const stage = target('stage', [...scene('opening', 'opening'), ...scene('ending', 'ending'),
+        ...keyRoutes('flat', '{"Space":"ending","ArrowLeft":"opening","Enter":"lost","x":3}'),
+        ...keyRoutes('nested', '{"stableId":"opening","routes":{"Space":"ending"}}'),
+        ...keyRoutes('broken', '{"Space":'), ...keyRoutes('array', '["ending"]')], {runtime});
+    assert.deepEqual(readScriptRelations([stage]).map(({source, destination, label, unresolved}) =>
+        [source.blockId, destination?.blockId, label, unresolved]), [
+        ['flat', 'ending', 'Space → ending', undefined],
+        ['flat', 'opening', 'ArrowLeft → opening', undefined],
+        ['flat', undefined, 'Enter → lost', 'missing'],
+        ['nested', 'ending', 'Space → ending', undefined],
+        ['broken', undefined, '', 'missing'],
+        ['array', undefined, '', 'missing']
+    ]);
+});

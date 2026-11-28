@@ -29,7 +29,8 @@ export function readSavedCodePane(value: Record<string, unknown>): SavedCodePane
     const visibility = relationVisibility as Partial<ScriptRelationVisibility> | null;
     return {scale, x, y, ...(scriptViews.includes(scriptView as ScriptView) && {scriptView: scriptView as ScriptView}),
         ...(visibility && typeof visibility.function === 'boolean' && typeof visibility.message === 'boolean' &&
-            {relationVisibility: {function: visibility.function, message: visibility.message}})};
+            {relationVisibility: {function: visibility.function, message: visibility.message,
+                ...(typeof visibility.reference === 'boolean' && {reference: visibility.reference})}})};
 }
 
 export function createCodePaneAdapter(vm, locale: string, attachMinimap?: AttachPreviewMinimap) {

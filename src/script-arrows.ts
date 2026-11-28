@@ -4,7 +4,11 @@ import {outlinePoint} from './script-outline.ts';
 import {isFoldedDefinition} from './procedure-edits.ts';
 import {readScriptRelations, type RelationTarget, type ScriptEndpoint, type ScriptRelation} from './script-relations.ts';
 
-export type ScriptRelationVisibility = {function: boolean; message: boolean};
+/** `reference` (arrows declared by extension blocks) follows the other kinds when a caller omits it. */
+export type ScriptRelationVisibility = {function: boolean; message: boolean; reference?: boolean};
+const shown = (visibility: ScriptRelationVisibility, kind: ScriptRelation['kind']) =>
+    kind === 'reference' ? visibility.reference ?? (visibility.function || visibility.message) : visibility[kind];
+const anyShown = (visibility: ScriptRelationVisibility) => visibility.function || visibility.message || shown(visibility, 'reference');
 
 export interface ScriptRelationContext {
     vm?: {
@@ -28,7 +32,7 @@ type Box = Point & {width: number; height: number};
 type CutRequests = Map<string, OutlineCut>;
 type Anchor = {id: string; box: Box; point(side: 'left' | 'right', fraction: number, requests?: CutRequests): Point};
 type Drawing = {relation: ScriptRelation; source?: Anchor; destination?: Anchor; count: number;
-    serialRoute?: {right: number; top: number; clearance: number; radius: number}};
+    serialRoute?: {right: number; top: number; left?: number; clearance: number; radius: number}};
 
 function roundedRoute(points: Point[], radii: readonly number[]) {
     let path = `M ${points[0].x} ${points[0].y}`;
@@ -128,11 +132,11 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     };
     const markedScripts = new Map<SVGElement, 'source' | 'related'>();
     const text = () => /^ja(?:-|$)/i.test(getLocale?.() ?? document.documentElement.lang) ? {
-        title: '呼び出しの矢印', function: '関数呼び出し', message: 'メッセージ送信', wait: '送って待つ',
+        title: '呼び出しの矢印', function: '関数呼び出し', message: 'メッセージ送信', reference: '参照', wait: '送って待つ',
         dynamic: '実行時に決定', missing: '接続先が見つかりません', ambiguous: '接続先が複数の定義に一致',
         incoming: '呼び出し元', outgoing: '接続先', count: '件'
     } : {
-        title: 'Script arrows', function: 'Function call', message: 'Message send', wait: 'Send and wait',
+        title: 'Script arrows', function: 'Function call', message: 'Message send', reference: 'Reference', wait: 'Send and wait',
         dynamic: 'Determined at runtime', missing: 'Destination not found', ambiguous: 'Multiple definitions match',
         incoming: 'Source', outgoing: 'Destination', count: 'calls'
     };
@@ -304,9 +308,10 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             badgePoint = {x: middle, y: top - 6};
         }
         if (serialRoute && source && destination) {
-            const {right, top, clearance, radius} = serialRoute;
+            const {right, top, left, clearance, radius} = serialRoute;
             // Leave room beside every script before turning vertically, then return through the gap above the hat.
-            const approach = end.x - clearance;
+            // A destination inside the script is approached from the script's left edge, clear of its outer blocks.
+            const approach = Math.min(end.x, left ?? end.x) - clearance;
             path = roundedRoute([start, {x: right, y: start.y}, {x: right, y: top},
                 {x: approach, y: top}, {x: approach, y: end.y}, end], [radius, radius, clearance, clearance]);
             badgePoint = {x: right, y: (start.y + top) / 2};
@@ -368,7 +373,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     function render() {
         frame = undefined;
         if (disposed) return;
-        if (!enabled || !visibility.function && !visibility.message) { clear(); return; }
+        if (!enabled || !anyShown(visibility)) { clear(); return; }
         const strings = text();
         const toolbox = injection.querySelector<HTMLElement>(':scope > .blocklyToolboxDiv');
         const toolboxBounds = toolbox?.getBoundingClientRect();
@@ -441,7 +446,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             return measuredAnchors.get(key);
         };
         for (const relation of graph) {
-            if (!visibility[relation.kind]) continue;
+            if (!shown(visibility, relation.kind)) continue;
             if (relation.source.targetId !== target.id && relation.destination?.targetId !== target.id) continue;
             const source = measuredAnchor(relation.source);
             const destination = relation.destination && measuredAnchor(relation.destination);
@@ -493,7 +498,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
                 const destination = scripts.get(drawing.relation.destination.scriptId);
                 if (!destination) continue;
                 drawing.serialRoute = {right: rightEdge + (96 + lane * 16) * unit,
-                    top: destination.y - (14 + lane % 4 * 6) * unit, clearance: 8 * unit, radius: 48 * unit};
+                    top: destination.y - (14 + lane % 4 * 6) * unit, left: destination.x, clearance: 8 * unit, radius: 48 * unit};
                 lane++;
             }
             // Reserve actual scrollable SVG width for the right-hand routes while preserving the block scale.
@@ -506,7 +511,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             }
         }
         const related = new Set<string>();
-        for (const relation of graph) if (visibility[relation.kind] && dragging && incident(relation)) {
+        for (const relation of graph) if (shown(visibility, relation.kind) && dragging && incident(relation)) {
             if (inDrag(relation.source) && relation.destination?.targetId === target.id && !inDrag(relation.destination)) {
                 related.add(relation.destination.scriptId);
             }
@@ -585,7 +590,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
     }
 
     function schedule() {
-        if (!enabled || !visibility.function && !visibility.message) { clear(); return; }
+        if (!enabled || !anyShown(visibility)) { clear(); return; }
         if (!disposed && frame === undefined) frame = view.requestAnimationFrame(render);
     }
     function update() {
@@ -640,7 +645,8 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
         get enabled() { return enabled; },
         get visibility() { return {...visibility}; },
         setVisibility(value: ScriptRelationVisibility) {
-            if (value.function === visibility.function && value.message === visibility.message) return;
+            if (value.function === visibility.function && value.message === visibility.message &&
+                value.reference === visibility.reference) return;
             visibility = {...value};
             update();
         },
@@ -656,7 +662,7 @@ export function attachScriptArrows({workspace, vm, getTarget, getRelations, getL
             destinations.hidden = true;
             projectedLayer = svg ? element('g', {'data-script-relation-layer': '', 'aria-hidden': 'true', 'pointer-events': 'none'}) : undefined;
             if (projectedLayer) svg.prepend(projectedLayer);
-            if (progressiveProjection && enabled && (visibility.function || visibility.message)) {
+            if (progressiveProjection && enabled && anyShown(visibility)) {
                 // Give the projected blocks a paint before reading or drawing the relations.
                 frame = view.requestAnimationFrame(() => {frame = view.requestAnimationFrame(render);});
             } else update();

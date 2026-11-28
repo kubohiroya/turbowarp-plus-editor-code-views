@@ -19,6 +19,45 @@ export interface RelationTarget {
     isStage?: boolean;
     getName?(): string;
     blocks: {_blocks: Record<string, RelationBlock>};
+    /** Scratch VM targets carry their runtime; its loaded extension info supplies block declarations. */
+    runtime?: RelationRuntime;
+}
+
+/**
+ * One extension block's relation declaration, read from the block entry of the extension's `getInfo()`
+ * as `scriptRelations`. Channels are names shared by both sides rather than opcodes, so a declaration
+ * survives bundling and may link blocks of different extensions.
+ */
+export interface ScriptRelationBlockDeclaration {
+    /** This block is a destination for references in `channel` whose `argument` value equals its own. */
+    targets?: readonly {channel: string; argument: string}[];
+    /** This block refers, through `argument`, to the blocks declared as targets of `channel`. */
+    references?: readonly ScriptRelationReferenceDeclaration[];
+}
+
+export interface ScriptRelationReferenceDeclaration {
+    channel: string;
+    argument: string;
+    /**
+     * Read several references from a JSON object in the argument instead of its whole text. The first
+     * path that names an object is used (`[]` is the root), and each of its string property values is
+     * one reference, labelled `key → value`. Other values are ignored.
+     */
+    json?: {objectPaths: readonly (readonly string[])[]};
+}
+
+interface RelationBlockInfo {
+    info?: {opcode?: string; scriptRelations?: unknown; arguments?: Record<string, {menu?: unknown}>};
+    json?: {type?: unknown; [key: string]: unknown} | null;
+}
+
+interface RelationCategoryInfo {
+    blocks?: readonly RelationBlockInfo[];
+    menus?: readonly {json?: {type?: unknown; [key: string]: unknown} | null}[];
+}
+
+export interface RelationRuntime {
+    _blockInfo?: readonly RelationCategoryInfo[];
 }
 
 export interface ScriptEndpoint {
@@ -27,8 +66,10 @@ export interface ScriptEndpoint {
     scriptId: string;
 }
 
+export type ScriptRelationKind = 'function' | 'message' | 'reference';
+
 export interface ScriptRelation {
-    kind: 'function' | 'message';
+    kind: ScriptRelationKind;
     source: ScriptEndpoint;
     destination?: ScriptEndpoint;
     label: string;
@@ -38,7 +79,21 @@ export interface ScriptRelation {
 
 const namedPrefix = 'kubohiroyanamedfunctions_';
 
-type Program = {target: RelationTarget; blocks: Record<string, RelationBlock>; endpoint(id: string): ScriptEndpoint | undefined};
+export type ScriptRelationProgram = {
+    target: RelationTarget;
+    blocks: Record<string, RelationBlock>;
+    /** The endpoint of any block, with the top block of its script; undefined for a detached or cyclic block. */
+    endpoint(id: string): ScriptEndpoint | undefined;
+};
+type Program = ScriptRelationProgram;
+
+/**
+ * An editor-side source of additional relations. It reads the same serialized program as the built-in
+ * relations and must not execute or modify it.
+ */
+export interface ScriptRelationResolver {
+    resolve(programs: readonly ScriptRelationProgram[]): readonly ScriptRelation[];
+}
 type Definition = {endpoint: ScriptEndpoint; scope: 'global' | 'sprite'};
 
 function program(target: RelationTarget): Program {
@@ -84,11 +139,204 @@ function append<K, V>(map: Map<K, V[]>, key: K, value: V) {
     else map.set(key, [value]);
 }
 
+type Declared = {channel: string; argument: string; json?: {objectPaths: string[][]}};
+type DeclarationIndex = {
+    targets: Map<string, Declared[]>;
+    references: Map<string, Declared[]>;
+    label(opcode: string, argument: string, value: string): string;
+};
+
+const relationChannel = /^[A-Za-z0-9_.:-]{1,128}$/;
+const relationArgument = /^[A-Za-z0-9_]{1,64}$/;
+
+function declarations(value: unknown, key: 'targets' | 'references'): Declared[] {
+    const list = value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined;
+    if (!Array.isArray(list)) return [];
+    return list.filter((entry): entry is Declared => Boolean(entry) && typeof entry === 'object' &&
+        typeof entry.channel === 'string' && relationChannel.test(entry.channel) &&
+        typeof entry.argument === 'string' && relationArgument.test(entry.argument))
+        .map(({channel, argument, json}) => {
+            const paths = key === 'references' && json && typeof json === 'object' &&
+                Array.isArray((json as {objectPaths?: unknown}).objectPaths) ?
+                (json as {objectPaths: unknown[]}).objectPaths.filter((path): path is string[] => Array.isArray(path) &&
+                    path.length <= 8 && path.every(part => typeof part === 'string')).slice(0, 8) : undefined;
+            return paths?.length ? {channel, argument, json: {objectPaths: paths.map(path => [...path])}} : {channel, argument};
+        });
+}
+
+const jsonReferenceLimit = 64 * 1024;
+
+/** The `key → value` pairs of the first declared object path; undefined when the text is not such JSON. */
+function jsonReferences(text: string, objectPaths: string[][]): {key: string; value: string}[] | undefined {
+    if (text.length > jsonReferenceLimit) return undefined;
+    let root: unknown;
+    try {
+        root = JSON.parse(text);
+    } catch {
+        return undefined;
+    }
+    const isObject = (value: unknown): value is Record<string, unknown> =>
+        Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+    for (const path of objectPaths) {
+        let current: unknown = root;
+        for (const part of path) current = isObject(current) && Object.hasOwn(current, part) ? current[part] : undefined;
+        if (isObject(current)) {
+            return Object.entries(current).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+                .map(([key, value]) => ({key, value}));
+        }
+    }
+    return undefined;
+}
+
+/** Dropdown options as Blockly would show them; a dynamic menu is the same function the dropdown calls. */
+function optionPairs(options: unknown): [string, string][] {
+    let value = options;
+    if (typeof value === 'function') {
+        try {
+            value = value();
+        } catch {
+            return [];
+        }
+    }
+    if (!Array.isArray(value)) return [];
+    return value.filter(Array.isArray).filter(pair => typeof pair[0] === 'string' && pair[1] !== undefined)
+        .map(pair => [pair[0], String(pair[1])]);
+}
+
+function blockArgs(json: RelationBlockInfo['json']) {
+    const args: Record<string, unknown>[] = [];
+    if (!json) return args;
+    for (const [key, value] of Object.entries(json)) {
+        if (/^args\d+$/.test(key) && Array.isArray(value)) args.push(...value.filter(arg => arg && typeof arg === 'object'));
+    }
+    return args;
+}
+
+function declarationIndex(runtime: RelationRuntime | undefined): DeclarationIndex | undefined {
+    const categories = Array.isArray(runtime?._blockInfo) ? runtime._blockInfo : [];
+    const targets = new Map<string, Declared[]>();
+    const references = new Map<string, Declared[]>();
+    const infos = new Map<string, {block: RelationBlockInfo; category: RelationCategoryInfo}>();
+    for (const category of categories) {
+        for (const block of Array.isArray(category?.blocks) ? category.blocks : []) {
+            const opcode = block?.json?.type;
+            const declaration = block?.info?.scriptRelations;
+            if (typeof opcode !== 'string' || !declaration) continue;
+            const own = declarations(declaration, 'targets');
+            const outgoing = declarations(declaration, 'references');
+            if (own.length) targets.set(opcode, own);
+            if (outgoing.length) references.set(opcode, outgoing);
+            if (outgoing.length) infos.set(opcode, {block, category});
+        }
+    }
+    if (!targets.size || !references.size) return undefined;
+    const labels = new Map<string, Map<string, string>>();
+    return {targets, references, label(opcode, argument, value) {
+        const key = `${opcode}\u0000${argument}`;
+        if (!labels.has(key)) {
+            const {block, category} = infos.get(opcode) ?? {};
+            let options: unknown;
+            // A menu without reporters is a dropdown on the block; otherwise it is the menu shadow's dropdown.
+            const field = blockArgs(block?.json).find(arg => arg.name === argument && arg.type === 'field_dropdown');
+            if (field) options = field.options;
+            else {
+                const menu = block?.info?.arguments?.[argument]?.menu;
+                const extension = opcode.slice(0, Math.max(0, opcode.length - String(block?.info?.opcode ?? '').length - 1));
+                const shadow = typeof menu === 'string' && extension ? `${extension}_menu_${menu}` : undefined;
+                const json = shadow ? category?.menus?.find(entry => entry?.json?.type === shadow)?.json : undefined;
+                options = blockArgs(json).find(arg => arg.type === 'field_dropdown')?.options;
+            }
+            labels.set(key, new Map(optionPairs(options).map(([text, option]) => [option, text])));
+        }
+        return labels.get(key).get(value) ?? value;
+    }};
+}
+
+/**
+ * Read a declared argument without evaluating it: a dropdown field, or the single field of the active
+ * shadow. A reporter placed in the input is a runtime value.
+ */
+function declaredArgument(block: RelationBlock, blocks: Program['blocks'], name: string):
+    {value?: string; unresolved?: 'dynamic' | 'missing'} {
+    const own = block.fields?.[name]?.value;
+    if (own !== undefined && own !== null) return {value: String(own)};
+    const input = block.inputs?.[name];
+    const active = input?.block ? blocks[input.block] : undefined;
+    if (!active) return {unresolved: 'missing'};
+    if (!active.shadow && input.block !== input.shadow) return {unresolved: 'dynamic'};
+    const fields = Object.values(active.fields ?? {});
+    const value = fields.length === 1 ? fields[0]?.value : undefined;
+    return value === undefined || value === null ? {unresolved: 'missing'} : {value: String(value)};
+}
+
+/** Relations declared by loaded extension blocks: each reference fans out to every matching target. */
+function readDeclaredRelations(programs: readonly Program[]): ScriptRelation[] {
+    const index = declarationIndex(programs.find(program => program.target.runtime)?.target.runtime);
+    if (!index) return [];
+    const destinations = new Map<string, ScriptEndpoint[]>();
+    for (const {blocks, endpoint} of programs) {
+        for (const block of Object.values(blocks)) {
+            const declared = block.shadow ? undefined : index.targets.get(block.opcode);
+            if (!declared) continue;
+            const destination = endpoint(block.id);
+            if (!destination) continue;
+            for (const {channel, argument} of declared) {
+                const {value} = declaredArgument(block, blocks, argument);
+                if (value !== undefined) append(destinations, `${channel}\u0000${value}`, destination);
+            }
+        }
+    }
+    const relations: ScriptRelation[] = [];
+    for (const {blocks, endpoint} of programs) {
+        for (const block of Object.values(blocks)) {
+            const declared = block.shadow ? undefined : index.references.get(block.opcode);
+            if (!declared) continue;
+            const source = endpoint(block.id);
+            if (!source) continue;
+            for (const {channel, argument, json} of declared) {
+                const {value, unresolved} = declaredArgument(block, blocks, argument);
+                const base = {kind: 'reference' as const, source, wait: true};
+                if (unresolved || value === undefined) {
+                    relations.push({...base, label: '', unresolved: unresolved ?? 'missing'});
+                    continue;
+                }
+                const pairs = json ? jsonReferences(value, json.objectPaths) : undefined;
+                if (json && !pairs) {
+                    relations.push({...base, label: '', unresolved: 'missing'});
+                    continue;
+                }
+                const references = pairs ? pairs.map(pair => ({value: pair.value, label: `${pair.key} → ${pair.value}`})) :
+                    [{value, label: index.label(block.opcode, argument, value)}];
+                for (const reference of references) {
+                    const relation = {...base, label: reference.label};
+                    const matches = (destinations.get(`${channel}\u0000${reference.value}`) ?? [])
+                        .filter(destination => destination.targetId !== source.targetId || destination.blockId !== source.blockId);
+                    if (!matches.length) relations.push({...relation, unresolved: 'missing'});
+                    else for (const destination of matches) relations.push({...relation, destination});
+                }
+            }
+        }
+    }
+    return relations;
+}
+
+const registeredResolvers = new Set<ScriptRelationResolver>();
+
+/** Add relations from an editor integration to every later relation scan. Returns the unregistration. */
+export function registerScriptRelationResolver(resolver: ScriptRelationResolver): () => void {
+    if (!resolver || typeof resolver.resolve !== 'function') throw new TypeError('A script relation resolver is required.');
+    registeredResolvers.add(resolver);
+    return () => {
+        registeredResolvers.delete(resolver);
+    };
+}
+
 /**
  * Extract possible static calls without executing the project or modifying its blocks.
  * Broadcasts fan out; conflicting function definitions and computed names stay unresolved.
  */
-export function readScriptRelations(targets: readonly RelationTarget[]): ScriptRelation[] {
+export function readScriptRelations(targets: readonly RelationTarget[],
+    options: {resolvers?: readonly ScriptRelationResolver[]} = {}): ScriptRelation[] {
     const seenTargets = new Set<string>();
     const programs = targets.filter(target => {
         if (target.isOriginal === false || seenTargets.has(target.id)) return false;
@@ -173,6 +421,14 @@ export function readScriptRelations(targets: readonly RelationTarget[]): ScriptR
             } else {
                 for (const destination of destinations) relations.push({...relation, destination});
             }
+        }
+    }
+    relations.push(...readDeclaredRelations(programs));
+    for (const resolver of [...registeredResolvers, ...options.resolvers ?? []]) {
+        try {
+            relations.push(...resolver.resolve(programs));
+        } catch {
+            // One failing integration must not remove the native arrows.
         }
     }
     return relations;
