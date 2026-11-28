@@ -74,7 +74,7 @@ test('the ▼ button opens the editor; groups dragged onto a tab become the pale
     await expect(editor).toBeVisible();
 
     await editor.getByRole('button', {name: 'Add a palette'}).click();
-    await expect(editor.locator('.dv-tab')).toHaveCount(1);
+    await expect(editor.locator('.dv-tab')).toHaveCount(2);
     await longDrag(page, sourceTile(page, 'looks'), area(page));
     await longDrag(page, sourceTile(page, 'motion'), tiles(page).first(), 'left');
     await longDrag(page, sourceTile(page, 'media'), area(page));
@@ -139,12 +139,12 @@ test('the ▼ button opens the editor; groups dragged onto a tab become the pale
     await expect(tiles(page)).toHaveCount(5);
     // A second tab, renamed from its menu.
     await editor.getByRole('button', {name: 'Add a palette'}).click();
-    await expect(editor.locator('.dv-tab')).toHaveCount(2);
-    await editor.locator('.dv-tab').nth(1).click({button: 'right'});
+    await expect(editor.locator('.dv-tab')).toHaveCount(3);
+    await editor.locator('.dv-tab').nth(2).click({button: 'right'});
     await editor.getByRole('menuitem', {name: 'Edit label'}).click();
     await editor.getByRole('textbox', {name: 'Label'}).fill('Story');
     await page.keyboard.press('Enter');
-    await expect(editor.locator('.dv-tab').nth(1)).toContainText('Story');
+    await expect(editor.locator('.dv-tab').nth(2)).toContainText('Story');
     await expect(tiles(page)).toHaveCount(0);
     await expect(sourceTile(page, 'motion').locator('.tw-bpe-badge')).toHaveCount(0);
     // Maximize.
@@ -257,5 +257,53 @@ test('a group placed twice appears twice in the saved palette, and each opens it
     await page.locator('[class~="scratchCategoryId-motion~2"]').click();
     await expect.poll(blocks).toEqual(['motion_movesteps', 'motion_turnright']);
     await shot(page, '8-twice');
+    assert.deepEqual(errors, []);
+});
+
+test('the default tab holds every source group in order, cannot be removed, and is changed through a duplicate', async () => {
+    const {page, errors} = await open();
+    await page.getByRole('button', {name: 'Open the block palette editor'}).click();
+    const editor = editorOf(page);
+    const tabs = editor.locator('.dv-tab');
+    await expect(tabs).toHaveCount(1);
+    await expect(tabs.first()).toContainText('Standard');
+    await expect(tabs.first().locator('.dv-default-tab-action')).toBeHidden();
+    const order = () => editor.locator('.tw-bpe-tab-content:visible .tw-bpe-tile').evaluateAll(items =>
+        items.map(item => item.getAttribute('title')));
+    assert.deepEqual(await order(), ['Motion', 'Looks', 'Media', 'Sound', 'Events', 'Control', 'Operators']);
+    await expect(sourceTile(page, 'looks').locator('.tw-bpe-badge')).toHaveText('1');
+    // It follows the first panel's order.
+    await longDrag(page, sourceTile(page, 'operators'), sourceTile(page, 'motion'), 'left');
+    assert.deepEqual((await order())[0], 'Operators');
+    // Its menu offers no removal, and a duplicate is an ordinary palette.
+    await tabs.first().click({button: 'right'});
+    await expect(editor.getByRole('menuitem', {name: 'Remove'})).toHaveCount(0);
+    await editor.getByRole('menuitem', {name: 'Duplicate'}).click();
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toContainText('Standard copy');
+    assert.deepEqual(await tiles(page).evaluateAll(items => items.map(item => item.getAttribute('title'))),
+        ['Operators', 'Motion', 'Looks', 'Media', 'Sound', 'Events', 'Control']);
+    await tiles(page).nth(0).click({button: 'right'});
+    await editor.getByRole('menuitem', {name: 'Remove'}).click();
+    await expect(tiles(page)).toHaveCount(6);
+    await tabs.nth(1).click({button: 'right'});
+    await expect(editor.getByRole('menuitem', {name: 'Remove'})).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    // Add Extension sits at the end of the first panel, outside its grid.
+    const source = (await editor.locator('.tw-bpe-source').boundingBox())!;
+    const add = (await editor.getByRole('button', {name: 'Add Extension'}).boundingBox())!;
+    assert.ok(source.x + source.width - (add.x + add.width) < 24 && source.y + source.height - (add.y + add.height) < 24);
+    await expect(editor.locator('.tw-bpe-source-grid').getByRole('button', {name: 'Add Extension'})).toHaveCount(0);
+    await shot(page, '9-default-tab');
+    // The default tab chosen and saved, the palette shows every group in the first panel's order.
+    await tabs.first().click();
+    await editor.getByRole('button', {name: 'Save and close'}).click();
+    await expect.poll(() => page.evaluate(() => (globalThis as any).palette.rows()))
+        .toEqual(['operators', 'motion', 'looks', 'media', 'sound', 'events', 'control']);
+    // Opened again, the default tab is still first and chosen, and the copy kept its change.
+    await page.getByRole('button', {name: 'Open the block palette editor'}).click();
+    await expect(tabs).toHaveCount(2);
+    await tabs.nth(1).click();
+    await expect(tiles(page)).toHaveCount(6);
     assert.deepEqual(errors, []);
 });

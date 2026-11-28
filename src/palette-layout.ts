@@ -44,6 +44,49 @@ export interface PaletteLayout {
     id: string;
     name: string;
     items: PaletteLayoutItem[];
+    /**
+     * Whether this is the default layout, which cannot be removed and always holds every block group in the order of
+     * the editor's source panel; its own `items` are not used (see {@link materializePaletteLayout}).
+     */
+    builtin?: boolean;
+}
+
+/** The ID of the default layout. */
+export const defaultLayoutId = 'default';
+
+/** The block groups in the order the editor's source panel was arranged into; groups not arranged keep their order. */
+export function orderSourceGroups<T extends string | {id: string}>(groups: readonly T[], sourceOrder: readonly string[] = []): T[] {
+    const idOf = (group: T) => typeof group === 'string' ? group : group.id;
+    const rank = (group: T, index: number) => {
+        const at = sourceOrder.indexOf(idOf(group));
+        return at < 0 ? sourceOrder.length + index : at;
+    };
+    return groups.map((group, index) => ({group, rank: rank(group, index)})).sort((a, b) => a.rank - b.rank)
+        .map(entry => entry.group);
+}
+
+/** The layouts with the default one first, added when they have none. */
+export function withDefaultLayout(saved: SavedPaletteLayouts | undefined, name: string): SavedPaletteLayouts {
+    const layouts = saved?.layouts ?? [];
+    const next: SavedPaletteLayouts = {...(saved ?? {layouts: []}), layouts: [...layouts]};
+    if (!layouts.some(layout => layout.builtin)) next.layouts.unshift({id: defaultLayoutId, name, items: [], builtin: true});
+    if (!next.active || !next.layouts.some(layout => layout.id === next.active)) next.active = next.layouts[0].id;
+    return next;
+}
+
+/** The layout with its items: the default one holds every group in the source panel's order. */
+export function materializePaletteLayout(layout: PaletteLayout, groups: readonly string[], sourceOrder?: readonly string[]):
+    PaletteLayout {
+    if (!layout.builtin) return layout;
+    return {...layout, items: orderSourceGroups(groups, sourceOrder)
+        .map(ref => ({kind: 'group', key: `${defaultLayoutId}:${ref}`, ref, mode: 'auto'}))};
+}
+
+/** A copy of a layout under a new ID and name, every item with a new key, that can be edited and removed. */
+export function duplicatePaletteLayout(layout: PaletteLayout, name: string): PaletteLayout {
+    const rekey = <T extends PaletteLayoutItem>(item: T): T => item.kind === 'folder' ?
+        {...item, key: newLayoutKey(), items: item.items.map(rekey)} : {...item, key: newLayoutKey()};
+    return {id: newLayoutKey('l'), name, items: structuredClone(layout.items).map(rekey)};
 }
 
 /** The layouts of a project, the one the palette shows, and the order of the editor's source panel. */
@@ -107,7 +150,9 @@ export function parsePaletteLayouts(value: unknown): SavedPaletteLayouts | undef
         const keys = new Set<string>();
         const items = Array.isArray(entry.items) ? entry.items.map(item => parseItem(item, keys))
             .filter((item): item is PaletteLayoutItem => !!item) : [];
-        layouts.push({id, name: text(entry.name) ?? '', items});
+        const layout: PaletteLayout = {id, name: text(entry.name) ?? '', items};
+        if (entry.builtin === true && !layouts.some(item => item.builtin)) layout.builtin = true;
+        layouts.push(layout);
     }
     const saved: SavedPaletteLayouts = {layouts};
     const active = text(value.active);
@@ -118,9 +163,14 @@ export function parsePaletteLayouts(value: unknown): SavedPaletteLayouts | undef
     return saved;
 }
 
-/** The layout the palette shows, or nothing when none is chosen or the chosen one is empty. */
-export function activePaletteLayout(saved: SavedPaletteLayouts | undefined): PaletteLayout | undefined {
-    const layout = saved?.layouts.find(item => item.id === saved.active);
+/**
+ * The layout the palette shows, or nothing when none is chosen or the chosen one is empty. The default layout is
+ * given with its items when the block groups on offer are given, and is left out otherwise.
+ */
+export function activePaletteLayout(saved: SavedPaletteLayouts | undefined, groups?: readonly string[]): PaletteLayout | undefined {
+    const chosen = saved?.layouts.find(item => item.id === saved.active);
+    if (chosen?.builtin && !groups) return undefined;
+    const layout = chosen && materializePaletteLayout(chosen, groups ?? [], saved?.sourceOrder);
     return layout && layout.items.some(item => item.kind !== 'separator') ? layout : undefined;
 }
 

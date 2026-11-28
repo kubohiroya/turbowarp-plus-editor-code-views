@@ -2,8 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import {createDockview, DefaultTab, themeLight} from 'dockview';
 import type {DockviewApi, TabPartInitParameters} from 'dockview';
-import {appendLayoutItem, insertLayoutItem, layoutUsage, moveLayoutItem, newLayoutKey, pathOfKey, removeLayoutItem,
-    resolvePaletteLayout, updateLayoutItem} from './palette-layout.ts';
+import {appendLayoutItem, duplicatePaletteLayout, insertLayoutItem, layoutUsage, materializePaletteLayout, moveLayoutItem,
+    newLayoutKey, orderSourceGroups, pathOfKey, removeLayoutItem, resolvePaletteLayout, updateLayoutItem, withDefaultLayout}
+    from './palette-layout.ts';
 import type {PaletteLayout, PaletteLayoutDrop, PaletteLayoutFolder, PaletteLayoutGroup, PaletteLayoutItem, PaletteLayoutMode,
     PaletteLayoutOmission,
     SavedPaletteLayouts} from './palette-layout.ts';
@@ -55,7 +56,9 @@ const messages = {
         emptyFolder: 'Drop block groups here', addExtension: 'Add Extension', label: 'Label', resize: 'Drag to resize',
         omitted: {missing: 'Not in the palette: not available',
             empty: 'Not in the palette: the folder is empty', separator: 'Not in the palette: nothing to separate'} as Record<PaletteLayoutOmission, string>,
-        savedAs: 'Saving makes this preview the block palette.', keptOpen: 'Blocks kept open'
+        savedAs: 'Saving makes this preview the block palette.', keptOpen: 'Blocks kept open',
+        defaultName: 'Standard', duplicate: 'Duplicate', copyName: (name: string) => `${name} copy`,
+        defaultNote: 'Every block group of the first panel, in its order. Duplicate this tab to change it.'
     },
     ja: {
         title: 'ブロックパレットエディタ', source: 'ブロックグループ', layouts: 'パレット', preview: 'プレビュー',
@@ -70,7 +73,9 @@ const messages = {
         emptyFolder: 'ここへブロックグループをドロップ', addExtension: '機能拡張を追加', label: 'ラベル', resize: 'ドラッグで大きさを変える',
         omitted: {missing: 'パレットには出ません：見つかりません',
             empty: 'パレットには出ません：フォルダが空です', separator: 'パレットには出ません：区切る相手がありません'} as Record<PaletteLayoutOmission, string>,
-        savedAs: '保存すると、このプレビューがブロックパレットになります。', keptOpen: '開いたままのブロック'
+        savedAs: '保存すると、このプレビューがブロックパレットになります。', keptOpen: '開いたままのブロック',
+        defaultName: '標準', duplicate: '複製', copyName: (name: string) => `${name} のコピー`,
+        defaultNote: '1番目のパネルのすべてのブロックグループを、その順番で並べます。変えるにはこのタブを複製します。'
     }
 };
 type Text = typeof messages.en;
@@ -142,6 +147,11 @@ class LayoutTab extends DefaultTab {
     }
     init(params: TabPartInitParameters) {
         super.init(params);
+        // The default palette cannot be removed.
+        const builtin = Boolean((params.params as {builtin?: boolean} | undefined)?.builtin);
+        this.element.toggleAttribute('data-builtin-layout', builtin);
+        const close = this.element.querySelector<HTMLElement>('.dv-default-tab-action');
+        if (close && builtin) close.style.display = 'none';
         this.element.addEventListener('contextmenu', event => {
             event.preventDefault();
             event.stopPropagation();
@@ -161,8 +171,8 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
 
     constructor(props: BlockPaletteEditorProps) {
         super(props);
-        const saved: SavedPaletteLayouts = props.initial ? structuredClone(props.initial) : {layouts: []};
-        if (!saved.active && saved.layouts.length) saved.active = saved.layouts[0].id;
+        const saved = withDefaultLayout(props.initial && structuredClone(props.initial),
+            (isJapanese(props.locale) ? messages.ja : messages.en).defaultName);
         this.state = {
             saved, maximized: false, sizes: [0.34, 0.4, 0.26], popover: null, menu: null, prompt: null,
             openFolders: new Set(), dial: false, drag: null, mounts: new Map()
@@ -183,13 +193,16 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
     }
     /** The groups in the order the source panel was arranged into. */
     sourceGroups(): PaletteSourceGroup[] {
-        const order = this.state.saved.sourceOrder ?? [];
-        const rank = (group: PaletteSourceGroup, index: number) => {
-            const at = order.indexOf(group.id);
-            return at < 0 ? order.length + index : at;
-        };
-        return this.props.groups.map((group, index) => ({group, rank: rank(group, index)}))
-            .sort((a, b) => a.rank - b.rank).map(entry => entry.group);
+        return orderSourceGroups(this.props.groups, this.state.saved.sourceOrder);
+    }
+    /** The layout with its items, the default one holding every source group in order. */
+    view(layout: PaletteLayout | undefined): PaletteLayout | undefined {
+        return layout && materializePaletteLayout(layout, this.props.groups.map(group => group.id), this.state.saved.sourceOrder);
+    }
+    /** The palette that items are added to: the chosen one, or a new one when that is the default. */
+    editable(): PaletteLayout {
+        const active = this.active;
+        return active && !active.builtin ? active : this.addLayout();
     }
     /** The result the editor gives back. */
     result(): SavedPaletteLayouts {
@@ -213,10 +226,25 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
         return layout;
     }
     removeLayout(layoutId: string) {
+        if (this.layouts.find(layout => layout.id === layoutId)?.builtin) return;
         this.setLayouts(saved => {
             const layouts = saved.layouts.filter(layout => layout.id !== layoutId);
             const active = saved.active === layoutId ? layouts[0]?.id : saved.active;
             return {...saved, layouts, active};
+        });
+    }
+    /** Adds a copy of a palette after it and chooses it. */
+    duplicateLayout(layoutId: string) {
+        const source = this.view(this.layouts.find(layout => layout.id === layoutId));
+        if (!source) return;
+        const used = new Set(this.layouts.map(layout => layout.name));
+        let name = this.text.copyName(source.name);
+        for (let n = 2; used.has(name); n++) name = `${this.text.copyName(source.name)} ${n}`;
+        const copy = duplicatePaletteLayout(source, name);
+        this.setLayouts(saved => {
+            const layouts = [...saved.layouts];
+            layouts.splice(layouts.findIndex(layout => layout.id === layoutId) + 1, 0, copy);
+            return {...saved, layouts, active: copy.id};
         });
     }
     renameLayout(layoutId: string, name: string) {
@@ -230,7 +258,7 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
     }
     /** Adds an item at the end of the chosen palette, adding a palette first when there is none. */
     addItem(item: PaletteLayoutItem) {
-        const target = this.active ?? this.addLayout();
+        const target = this.editable();
         this.updateLayout(target.id, layout => appendLayoutItem(layout, item));
         if (item.kind === 'folder') this.setState(({openFolders}) => ({openFolders: new Set(openFolders).add(item.key)}));
     }
@@ -286,7 +314,10 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
                 this.setLayouts(saved => ({...saved, active: id}));
             }),
             dockview.onDidRemovePanel(panel => {
-                if (!this.syncing) this.removeLayout(panel.id);
+                if (this.syncing) return;
+                // The default palette comes back if it was closed some other way.
+                if (this.layouts.find(layout => layout.id === panel.id)?.builtin) setTimeout(() => this.syncDockview(), 0);
+                else this.removeLayout(panel.id);
             }),
             dockview.onDidLayoutChange(() => {
                 if (this.syncing) return;
@@ -327,7 +358,10 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
             for (const panel of [...dockview.panels]) if (!ids.has(panel.id)) panel.api.close();
             for (const layout of this.layouts) {
                 const panel = dockview.getPanel(layout.id);
-                if (!panel) dockview.addPanel({id: layout.id, component: 'layout', title: layout.name, inactive: true});
+                // Every tab goes into the one group, never a new one beside it.
+                const group = dockview.groups[0];
+                if (!panel) dockview.addPanel({id: layout.id, component: 'layout', title: layout.name, inactive: true,
+                    params: {builtin: Boolean(layout.builtin)}, ...(group && {position: {referenceGroup: group}})});
                 else if (panel.title !== layout.name) panel.api.setTitle(layout.name);
             }
             const active = this.state.saved.active && dockview.getPanel(this.state.saved.active);
@@ -525,13 +559,13 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
 
     renderSource() {
         const text = this.text;
-        const usage = layoutUsage(this.active);
+        const usage = layoutUsage(this.view(this.active));
         const drag = this.state.drag;
         return (
             <section className="tw-bpe-panel tw-bpe-source" aria-label={text.source} data-bpe-drop="source"
                 data-trash={drag?.hint?.kind === 'trash' ? 'true' : undefined}>
                 <h3 className="tw-bpe-panel-title">{text.source}</h3>
-                <div className="tw-bpe-grid" role="list">
+                <div className="tw-bpe-grid tw-bpe-source-grid" role="list">
                     {this.sourceGroups().map(group => {
                         const count = usage.get(group.id) ?? 0;
                         const hint = drag?.hint?.kind === 'source' && drag.hint.id === group.id ? drag.hint.position : undefined;
@@ -560,14 +594,15 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
                             </div>
                         );
                     })}
-                    {this.props.onAddExtension && (
-                        <button type="button" className="tw-bpe-tile tw-bpe-add-extension"
-                            onClick={() => this.props.onAddExtension!(this.result())}>
-                            <span className="tw-bpe-icon tw-bpe-icon-add" aria-hidden="true">＋</span>
-                            <span className="tw-bpe-tile-label">{text.addExtension}</span>
-                        </button>
-                    )}
                 </div>
+                {this.props.onAddExtension && (
+                    <div className="tw-bpe-source-end">
+                        <button type="button" className="tw-bpe-add-extension"
+                            onClick={() => this.props.onAddExtension!(this.result())}>
+                            <span aria-hidden="true">＋</span>{text.addExtension}
+                        </button>
+                    </div>
+                )}
             </section>
         );
     }
@@ -648,6 +683,26 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
 
     renderLayoutGrid(layout: PaletteLayout) {
         const text = this.text;
+        if (layout.builtin) {
+            // The default palette follows the first panel and is not edited; its copies are.
+            return (
+                <div className="tw-bpe-layout" data-layout-id={layout.id} data-builtin-layout="">
+                    <p className="tw-bpe-layout-note">{text.defaultNote}</p>
+                    <div className="tw-bpe-grid" role="list" aria-label={layout.name}>
+                        {this.view(layout)!.items.map(item => {
+                            const group = item.kind === 'group' ? this.group(item.ref) : undefined;
+                            return (
+                                <div key={item.key} role="listitem" className="tw-bpe-tile tw-bpe-layout-tile" data-key={item.key}
+                                    data-readonly="" title={group?.name}>
+                                    <GroupIcon group={group} />
+                                    <span className="tw-bpe-tile-label">{group?.name}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        }
         const drag = this.state.drag;
         const areaHint = (folder?: string) => drag?.hint?.kind === 'area' && drag.hint.layoutId === layout.id &&
             drag.hint.folder === folder ? 'true' : undefined;
@@ -723,7 +778,7 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
 
     renderPreview() {
         const text = this.text;
-        const layout = this.active;
+        const layout = this.view(this.active);
         return (
             <section className="tw-bpe-panel tw-bpe-preview" aria-label={text.preview}>
                 <h3 className="tw-bpe-panel-title">{text.preview}{layout ? ` — ${layout.name}` : ''}
@@ -786,8 +841,14 @@ export class BlockPaletteEditor extends React.Component<BlockPaletteEditorProps,
                     }}>{text.editTabLabel}</button>
                     <button type="button" role="menuitem" onClick={() => {
                         close();
-                        this.removeLayout(layout.id);
-                    }}>{text.remove}</button>
+                        this.duplicateLayout(layout.id);
+                    }}>{text.duplicate}</button>
+                    {!layout.builtin && (
+                        <button type="button" role="menuitem" onClick={() => {
+                            close();
+                            this.removeLayout(layout.id);
+                        }}>{text.remove}</button>
+                    )}
                 </div>
             );
         }

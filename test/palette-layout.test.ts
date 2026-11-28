@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {JSDOM} from 'jsdom';
 import {activePaletteLayout, applyPaletteLayoutToTree, folderCategoryId, insertLayoutItem, layoutPaletteOrder, layoutUsage,
-    moveLayoutItem, parsePaletteLayouts, reorderLayoutByCategories, resolvePaletteLayout, updateLayoutItem} from '../dist/palette-layout.js';
+    moveLayoutItem, parsePaletteLayouts, withDefaultLayout, materializePaletteLayout, duplicatePaletteLayout, reorderLayoutByCategories, resolvePaletteLayout, updateLayoutItem} from '../dist/palette-layout.js';
 import {createPaletteOrder} from '../dist/palette-category-visibility.js';
 
 const group = (key, ref, mode = 'auto', label = undefined) => ({kind: 'group', key, ref, mode, ...(label ? {label} : {})});
@@ -164,4 +164,24 @@ test('a copy of a group brings its own nested groups, and reordering and pinning
     assert.deepEqual(current.items.map(item => item.mode), ['open', 'auto', 'open']);
     order.setCategories(['kami~2', 'kami/scene', 'kami']);
     assert.deepEqual(current.items.map(item => item.key), ['k2', 's', 'k1']);
+});
+
+test('the default layout comes first, holds every group in source order, and its copies are ordinary layouts', () => {
+    const saved = withDefaultLayout({layouts: [layout([group('a', 'motion')])], active: 'l'}, 'Standard');
+    assert.deepEqual(saved.layouts.map(item => [item.id, item.builtin ?? false]), [['default', true], ['l', false]]);
+    assert.equal(saved.active, 'l');
+    assert.equal(withDefaultLayout(undefined, 'Standard').active, 'default');
+    assert.equal(withDefaultLayout(saved, 'Standard').layouts.length, 2, 'it is added once');
+    const builtin = saved.layouts[0];
+    const items = materializePaletteLayout(builtin, ['motion', 'looks', 'pen'], ['pen']).items;
+    assert.deepEqual(items.map(item => item.ref), ['pen', 'motion', 'looks']);
+    assert.equal(activePaletteLayout({...saved, active: 'default'}), undefined, 'without the groups it is left out');
+    assert.equal(activePaletteLayout({...saved, active: 'default'}, ['motion']).items.length, 1);
+    const copy = duplicatePaletteLayout({...builtin, items}, 'Copy');
+    assert.equal(copy.builtin, undefined);
+    assert.notEqual(copy.id, builtin.id);
+    assert.deepEqual(copy.items.map(item => item.ref), ['pen', 'motion', 'looks']);
+    assert.ok(copy.items.every((item, index) => item.key !== items[index].key));
+    const parsed = parsePaletteLayouts({layouts: [{id: 'default', name: 'S', builtin: true, items: []}, {id: 'x', builtin: true}]});
+    assert.deepEqual(parsed.layouts.map(item => item.builtin ?? false), [true, false]);
 });

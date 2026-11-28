@@ -76,7 +76,8 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
     /** Keeps a change to the layout the palette shows, such as one made by reordering or pinning in the palette. */
     const changeActiveLayout = (layout: PaletteLayout) => {
         const saved = currentLayouts();
-        if (!saved) return;
+        // The default palette follows the editor's source panel and is not edited from the palette.
+        if (!saved || saved.layouts.find(item => item.id === layout.id)?.builtin) return;
         setLayouts({...saved, layouts: saved.layouts.map(item => item.id === layout.id ? layout : item)});
         paletteVM?.runtime.emitProjectChanged();
         refreshPalettes();
@@ -692,7 +693,8 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             if (reorder) reorder.cancel();
             if (tree) {
                 lastTree = tree.cloneNode(true) as Element;
-                shownLayout = activeLayout();
+                // The default palette holds every block group the toolbox offers, in the source panel's order.
+                shownLayout = activePaletteLayout(currentLayouts(), sourceGroups().map(group => group.id));
                 applied = undefined;
                 const found = groups.prepare(tree, {
                     catalog: paletteVM ? catalogOf(paletteVM, getLocale()) : undefined,
