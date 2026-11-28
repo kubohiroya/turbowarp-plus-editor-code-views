@@ -6,7 +6,7 @@ import {attachPaletteDropdownResize} from './palette-dropdown-resize.js';
 import {connectDetachedBlockPalette, openDetachedBlockPalette as openPaletteWindow, installGestureOwnerDocument, moveBlockWidgets} from
     './detached-block-palette.js';
 import {attachPaletteMenuButton, createPaletteOrder, createPaletteVisibilityStore, defaultVisibleGroups, extensionPaletteCatalog, groupOfOpcode,
-    installExtensionPaletteGroups, paletteGroupSets, paletteReplacementGroups, paletteScreenStateKey, paletteVisibilityMenuLabel, standardGroups, usedGroups} from './palette-category-visibility.js';
+    installExtensionPaletteGroups, paletteGroupLineage, paletteGroupSets, paletteReplacementGroups, paletteScreenStateKey, paletteVisibilityMenuLabel, standardGroups, usedGroups} from './palette-category-visibility.js';
 import type {PaletteCategoryInfo, PaletteTarget, PaletteVisibilityStore} from './palette-category-visibility.js';
 import {openPaletteReplacementDialog, openPaletteVisibilityDialog} from './palette-visibility-dialog.js';
 import {attachPaletteCategoryGroups, hasCategoryGroups} from
@@ -174,7 +174,8 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
             for (const block of imported) {
                 if (block?.shadow || !block?.opcode) continue;
                 const group = groupOfOpcode(block.opcode, catalog);
-                if (group && offered.has(group)) visible.add(group);
+                if (!group || !offered.has(group)) continue;
+                for (const id of paletteGroupLineage(group, catalog)) visible.add(id);
             }
             if (visible.size === before) return;
             store.set(target, [...visible], ids);
@@ -607,7 +608,8 @@ export function createHorizontalBlockPalette({getScratchBlocks, openExtensionLib
                         id: info.id,
                         metadata: {name: info.name || info.id, banner: info.menuIconURI || info.blockIconURI},
                         groups: groups.some(group => group.declared) ?
-                            groups.map(group => ({id: group.id, name: group.name, color: group.color1})) : undefined
+                            groups.map(group => ({id: group.id, name: group.name, color: group.color1, parent: group.parent,
+                                empty: group.empty})) : undefined
                     };
                 }),
                 sets: paletteGroupSets(getLocale(), store.sets()),

@@ -92,6 +92,13 @@ export interface ExtensionPaletteGroup {
     color1?: string;
     color2?: string;
     menuIconURI?: string;
+    /**
+     * The ID of the declared group this one is nested in, from the group's `parent` in `getInfo()`. The palette shows
+     * it inside that group, and the settings screen indents it under that group.
+     */
+    parent?: string;
+    /** Whether the group holds no blocks of its own and is offered only as the group of its nested groups. */
+    empty?: boolean;
 }
 
 /** The extension groups the project's extensions offer, and which group each of their blocks belongs to. */
@@ -109,6 +116,8 @@ interface DeclaredGroup {
     color2?: string;
     color3?: string;
     menuIconURI?: string;
+    /** The ID of another group of the same extension that this one is nested in. */
+    parent?: string;
 }
 /** The parts of the VM's category info (`runtime._blockInfo`) this module reads. */
 export interface PaletteCategoryInfo {
@@ -154,7 +163,11 @@ function groupName(value: unknown): GroupName | undefined {
 
 const groupIdPattern = /^[A-Za-z0-9_-]+$/;
 const optionalString = (value: unknown) => typeof value === 'string' && value ? value : undefined;
-/** The groups `getInfo()` declares, leaving out any that are not well formed or repeat an ID. */
+/**
+ * The groups `getInfo()` declares, leaving out any that are not well formed or repeat an ID. A `parent` that names no
+ * other declared group, names the group itself or leads back to it is dropped, so the group stays at the top level.
+ * The groups come in the order the palette lists them: each one followed by the groups nested in it, depth first.
+ */
 function declaredGroups(value: unknown): DeclaredGroup[] {
     if (!Array.isArray(value)) return [];
     const groups: DeclaredGroup[] = [];
@@ -165,9 +178,30 @@ function declaredGroups(value: unknown): DeclaredGroup[] {
         const entry = item as Record<string, unknown>;
         groups.push({id, name: groupName(name) ?? id, color1: optionalString(entry.color1),
             color2: optionalString(entry.color2), color3: optionalString(entry.color3),
-            menuIconURI: optionalString(entry.menuIconURI)});
+            menuIconURI: optionalString(entry.menuIconURI), parent: optionalString(entry.parent)});
     }
-    return groups;
+    const ids = new Set(groups.map(group => group.id));
+    const parentOf = new Map(groups.filter(group => group.parent && ids.has(group.parent)).map(group => [group.id, group.parent!]));
+    const nested = (id: string) => {
+        const seen = new Set<string>();
+        for (let current = parentOf.get(id); current !== undefined; current = parentOf.get(current)) {
+            if (current === id) return false;
+            if (seen.has(current)) return true;
+            seen.add(current);
+        }
+        return parentOf.has(id);
+    };
+    const resolved = groups.map((group): DeclaredGroup => {
+        const {parent, ...rest} = group;
+        return nested(group.id) ? {...rest, parent} : rest;
+    });
+    const ordered: DeclaredGroup[] = [];
+    const visit = (group: DeclaredGroup) => {
+        ordered.push(group);
+        for (const child of resolved) if (child.parent === group.id) visit(child);
+    };
+    for (const group of resolved) if (!group.parent) visit(group);
+    return ordered;
 }
 
 /**
@@ -222,16 +256,26 @@ export function extensionPaletteCatalog(categories: readonly PaletteCategoryInfo
             groupOf.set(opcode, `${category.id}/${group.id}`);
             used.add(group.id);
         }
+        // A group is offered when it or a group nested in it holds blocks.
+        const offered = new Set<string>();
+        for (const id of used) {
+            for (let current: string | undefined = id; current !== undefined && !offered.has(current);
+                current = declared.find(group => group.id === current)?.parent) offered.add(current);
+        }
         const menuIconURI = category.menuIconURI || category.blockIconURI || undefined;
         if (unmarked) {
             groups.push({id: category.id, extensionId: category.id, name: extensionName, extensionName, declared: false,
                 color1: category.color1, color2: category.color2, menuIconURI});
         }
         for (const group of declared) {
-            if (!used.has(group.id)) continue;
-            groups.push({id: `${category.id}/${group.id}`, extensionId: category.id, name: resolveGroupName(group.name, locale), extensionName,
-                declared: true, color1: group.color1 ?? category.color1, color2: group.color2 ?? category.color2,
-                menuIconURI: group.menuIconURI ?? menuIconURI});
+            if (!offered.has(group.id)) continue;
+            const entry: ExtensionPaletteGroup = {id: `${category.id}/${group.id}`, extensionId: category.id,
+                name: resolveGroupName(group.name, locale), extensionName, declared: true,
+                color1: group.color1 ?? category.color1, color2: group.color2 ?? category.color2,
+                menuIconURI: group.menuIconURI ?? menuIconURI};
+            if (group.parent) entry.parent = `${category.id}/${group.parent}`;
+            if (!used.has(group.id)) entry.empty = true;
+            groups.push(entry);
         }
     }
     return {groups, groupOf};
@@ -257,20 +301,32 @@ export interface PaletteTarget {
     blocks?: {_blocks?: Record<string, BlockLike>};
 }
 
-/** How many blocks of each group the target's code uses. Menus and other shadow blocks are not counted. */
+/** The group and the groups it is nested in, innermost first. */
+export function paletteGroupLineage(id: string, catalog?: PaletteGroupCatalog): string[] {
+    const lineage = [id];
+    for (let current = catalog?.groups.find(group => group.id === id)?.parent; current !== undefined && !lineage.includes(current);
+        current = catalog?.groups.find(group => group.id === current)?.parent) lineage.push(current);
+    return lineage;
+}
+
+/**
+ * How many blocks of each group the target's code uses. Menus and other shadow blocks are not counted. A group that
+ * other groups are nested in counts their blocks too, so it is in use whenever one of them is.
+ */
 export function usedGroups(target: Pick<PaletteTarget, 'blocks'>, catalog?: PaletteGroupCatalog): Map<string, number> {
     const counts = new Map<string, number>();
     for (const block of Object.values(target.blocks?._blocks ?? {})) {
         if (!block || block.shadow || typeof block.opcode !== 'string') continue;
         const group = groupOfOpcode(block.opcode, catalog);
-        if (group) counts.set(group, (counts.get(group) ?? 0) + 1);
+        if (!group) continue;
+        for (const id of paletteGroupLineage(group, catalog)) counts.set(id, (counts.get(id) ?? 0) + 1);
     }
     return counts;
 }
 
 /**
  * The groups shown when a target has no setting of its own: every standard group, and the groups of
- * the extension groups its code already uses, so a project opens with nothing missing. `extensionGroups` are the
+ * the extension groups its code already uses, with the groups they are nested in, so a project opens with nothing missing. `extensionGroups` are the
  * IDs of the extension groups on offer: the extension IDs, or with a catalog, its group IDs.
  */
 export function defaultVisibleGroups(target: Pick<PaletteTarget, 'blocks'>, extensionGroups: readonly string[],
@@ -295,7 +351,10 @@ function groupCategory(category: Element, group: ExtensionPaletteGroup, children
  * Splits each extension category whose extension declares groups into one category per group, in the catalog's
  * order. A label, separator or button goes with the block after it, or with the last block when none follows.
  * With `nested`, the extension's category stays, with its unmarked blocks, and holds the categories of its declared
- * groups, so the palette can show it as a group that opens them (see `./palette-category-groups`).
+ * groups, so the palette can show it as a group that opens them (see `./palette-category-groups`). A group with a
+ * `parent` is then nested in its parent's category in turn, and a parent without blocks of its own still gets a
+ * category while a group nested in it has blocks. Without `nested`, every group with blocks is a category of its own
+ * at the top level, and a parent without blocks of its own is left out.
  */
 export function splitExtensionCategories(tree: Element, catalog: PaletteGroupCatalog,
     {nested = false}: {nested?: boolean} = {}): void {
@@ -318,12 +377,20 @@ export function splitExtensionCategories(tree: Element, catalog: PaletteGroupCat
         if (pending.length) items.set(last, [...items.get(last) ?? [], ...pending]);
         if (nested) {
             category.replaceChildren(...items.get(extensionId) ?? []);
-            for (const group of groups) {
-                const children = items.get(group.id);
-                if (!group.declared || !children) continue;
-                const part = groupCategory(category, group, children);
+            const declared = groups.filter(group => group.declared);
+            // Groups that hold blocks, or hold a group that does; nested groups follow their parent in the catalog.
+            const kept = new Set<string>();
+            for (const group of [...declared].reverse()) {
+                if (items.has(group.id)) kept.add(group.id);
+                if (kept.has(group.id) && group.parent) kept.add(group.parent);
+            }
+            const parts = new Map<string, Element>();
+            for (const group of declared) {
+                if (!kept.has(group.id)) continue;
+                const part = groupCategory(category, group, items.get(group.id) ?? []);
                 part.removeAttribute('showStatusButton');
-                category.append(part);
+                parts.set(group.id, part);
+                (group.parent && parts.get(group.parent) || category).append(part);
             }
             continue;
         }

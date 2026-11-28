@@ -176,6 +176,21 @@ getInfo() {
 - 見出し・区切り・ボタンは、その次のブロックと同じグループに入る。オペコードは `shapes_circle` などのまま変わらないので、SB3 は変わらない。標準の TurboWarp と Scratch は `groups` と `paletteGroup` を無視し、1つのカテゴリとして表示する。
 - ホストは、機能拡張を読み込む前に `installExtensionPaletteGroups(vm.runtime)` を呼び、`extensionPaletteCatalog(vm.runtime._blockInfo)` をストア、`filterToolboxTree`、`usedGroups` に渡す。設定の画面には、そのような機能拡張の項目の `groups` としてグループを渡す。画面は機能拡張の行の中に、グループごとのチェックを出す。
 
+グループは、`parent` に同じ機能拡張の別のグループの `id` を書くと、そのグループの中に入れられる。親のグループは自分のブロックを持たなくてよいので、束ねた機能拡張のグループを1つのグループにまとめられる。
+
+```js
+groups: [
+    {id: 'library', name: {en: 'Libraries', ja: 'ライブラリ'}},
+    {id: 'assetcache', name: 'Asset Cache', parent: 'library'},
+    {id: 'asyncinput', name: 'Async Input', parent: 'library'}
+]
+```
+
+- `prepareGroupedToolboxTree`（またはグループのコントローラーの `prepare`）で用意したパレットでは、ID が `kami` の機能拡張の `kami/library` は機能拡張のカテゴリの中のカテゴリになり、`kami/assetcache` と `kami/asyncinput` を収める。ほかのグループと同じく、押すと子パレットで中のグループを開く。入れ子は何段でもよい。自分のブロックを持たない親も、中のグループにブロックがあればカテゴリになり、中のグループのどれかを表示している間は、親自身を選んでいなくてもパレットに残る。
+- `extensionPaletteCatalog` は、親をその中のグループより前に並べ、中のグループに `parent`（`kami/library` のような親のパレット ID）を付け、自分のブロックを持たない親に `empty` を付ける。中のどこにもブロックがない親は一覧に入れない。`usedGroups` は中のグループのブロックを親の数にも入れるので、`defaultVisibleGroups` は中のグループが使われていれば親も表示する。`paletteGroupLineage(id, catalog)` は、グループとそれを収めるグループを内側から順に返す。
+- 設定の画面は、機能拡張の `groups` の各項目の `parent` と `empty` を受け取り、中のグループを親の下に字下げして並べる。`empty` の親のチェックは、中のグループをまとめて表示・非表示にし（一部だけ表示中なら中間の状態になる）、親は中のグループのどれかを表示しているときだけ選ばれる。
+- 機能拡張のほかのグループを指さない `parent`、自分自身を指す `parent`、たどると自分に戻る `parent` は無視し、そのグループは最上位に置く。グループ化したパレットを使わない `filterToolboxTree` は、ブロックを持つグループをすべて最上位に並べ、自分のブロックを持たない親は出さない。
+
 拡張の `getInfo()` に `replacesPaletteGroups: ['variables', 'lists']` を指定すると、該当する標準グループを隠す提案ができます。変数だけ、リストだけ、両方を宣言できます。パレット設定で拡張のグループを表示するか、ホストが明示的な追加の成功後に `suggestPaletteReplacements(vm, extensionIds)` を呼んだとき、表示中の標準グループだけを提案します。承認した変更は選択中のスプライトまたはステージのパレット設定に保存されます。作品を開く処理からはこの口を呼びません。
 
 

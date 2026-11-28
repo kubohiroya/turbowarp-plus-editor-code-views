@@ -250,3 +250,44 @@ test('the alternative prompts for the affected target and hides groups only on c
     assert.equal(closed, 3);
     assert.equal(document.querySelector('dialog.tw-palette-replacement-dialog'), null);
 });
+
+test('nested groups are listed under their parent, and a parent without blocks switches them together', () => {
+    const view = open({
+        initial: new Set(['looks', 'kami/library', 'kami/assetcache']),
+        used: new Map([['kami/library', 3], ['kami/asyncinput', 3]]),
+        extensions: [{id: 'kami', metadata: {name: 'Kamishibai'}, groups: [
+            {id: 'kami/library', name: 'ライブラリ', empty: true},
+            {id: 'kami/assetcache', name: 'Asset Cache', parent: 'kami/library'},
+            {id: 'kami/asyncinput', name: 'Async Input', parent: 'kami/library'},
+            {id: 'kami/stage', name: '舞台'}
+        ]}]
+    });
+    const row = view.dialog.querySelector('[data-extension="kami"]');
+    const tree = row.querySelector('[data-group-tree="kami/library"]');
+    assert.ok(tree, 'the parent and its groups are drawn together');
+    assert.deepEqual([...tree.querySelectorAll('[data-group-parent="kami/library"] > [data-group]')].map(label => label.dataset.group),
+        ['kami/assetcache', 'kami/asyncinput'], 'its groups are indented under it');
+    const library = view.group('kami/library');
+    assert.equal(library.checked, false);
+    assert.equal(library.indeterminate, true, 'some of its groups are shown');
+    assert.equal(view.dialog.querySelector('[role="status"]').textContent.includes('1'), true,
+        'only the hidden group in use is counted, not the parent');
+    view.click(library);
+    assert.equal(library.checked, true);
+    assert.equal(library.indeterminate, false);
+    assert.equal(view.group('kami/asyncinput').checked, true);
+    view.click(view.button('確定'));
+    assert.deepEqual(view.choice.groups, ['looks', 'kami/library', 'kami/assetcache', 'kami/asyncinput']);
+
+    const again = open({
+        initial: new Set(['looks', 'kami/library', 'kami/assetcache']),
+        extensions: [{id: 'kami', metadata: {name: 'Kamishibai'}, groups: [
+            {id: 'kami/library', name: 'ライブラリ', empty: true},
+            {id: 'kami/assetcache', name: 'Asset Cache', parent: 'kami/library'}
+        ]}]
+    });
+    again.click(again.group('kami/assetcache'));
+    assert.equal(again.group('kami/library').checked, false);
+    again.click(again.button('確定'));
+    assert.deepEqual(again.choice.groups, ['looks'], 'a parent without blocks is hidden with the last of its groups');
+});
