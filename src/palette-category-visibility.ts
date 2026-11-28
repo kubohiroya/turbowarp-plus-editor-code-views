@@ -11,6 +11,9 @@
 export const standardGroups = ['motion', 'looks', 'sound', 'events', 'control', 'sensing', 'operators', 'variables', 'lists',
     'myBlocks'] as const;
 
+import {parsePaletteLayouts} from './palette-layout.ts';
+import type {SavedPaletteLayouts} from './palette-layout.ts';
+
 const replaceablePaletteGroups = ['variables', 'lists'] as const;
 export type ReplaceablePaletteGroup = typeof replaceablePaletteGroups[number];
 
@@ -429,6 +432,8 @@ export interface SavedPaletteVisibility {
     sprites?: Record<string, {groups: string[]}>;
     sets?: Record<string, SavedGroupSet>;
     order?: SavedPaletteOrder;
+    /** The palette layouts made in the block palette editor, and the one the palette shows. */
+    layouts?: SavedPaletteLayouts;
 }
 
 /**
@@ -555,6 +560,9 @@ export interface PaletteVisibilityStore {
     reset(): void;
     /** The order of the palette's categories, saved and loaded with the other settings. */
     order: PaletteOrder;
+    /** The palette layouts of the block palette editor, or nothing when the project has none. */
+    layouts(): SavedPaletteLayouts | undefined;
+    setLayouts(layouts: SavedPaletteLayouts | undefined): void;
 }
 
 /** The settings of one project, by runtime target ID, so a renamed sprite keeps its setting. */
@@ -569,6 +577,7 @@ export function createPaletteVisibilityStore({catalog, onOrderChange}: {
         defaultVisibleGroups(target, extensionIds, catalog?.());
     let groups = new Map<string, string[]>();
     let projectSets: Record<string, SavedGroupSet> = {};
+    let layouts: SavedPaletteLayouts | undefined;
     return {
         visible(target, extensionIds) {
             return new Set(groups.get(target.id) ?? defaults(target, extensionIds));
@@ -598,15 +607,18 @@ export function createPaletteVisibilityStore({catalog, onOrderChange}: {
             if (Object.keys(projectSets).length) saved.sets = structuredClone(projectSets);
             const arranged = order.capture();
             if (arranged) saved.order = arranged;
-            return saved.stage || saved.sprites || saved.sets || saved.order ? saved : undefined;
+            if (layouts && (layouts.layouts.length || layouts.sourceOrder?.length)) saved.layouts = structuredClone(layouts);
+            return saved.stage || saved.sprites || saved.sets || saved.order || saved.layouts ? saved : undefined;
         },
         apply(value, targets) {
             groups = new Map();
             projectSets = {};
+            layouts = undefined;
             order.reset();
             if (!value || typeof value !== 'object' || (value as {version?: unknown}).version !== 1) return;
             const saved = value as Record<string, unknown>;
             order.apply(saved.order);
+            layouts = parsePaletteLayouts(saved.layouts);
             const setting = (entry: unknown) => entry && typeof entry === 'object' ?
                 strings((entry as {groups?: unknown}).groups) : undefined;
             const sprites = saved.sprites && typeof saved.sprites === 'object' ? saved.sprites as Record<string, unknown> : {};
@@ -626,15 +638,20 @@ export function createPaletteVisibilityStore({catalog, onOrderChange}: {
         reset() {
             groups = new Map();
             projectSets = {};
+            layouts = undefined;
             order.reset();
         },
-        order
+        order,
+        layouts: () => layouts && structuredClone(layouts),
+        setLayouts(value) {
+            layouts = value && structuredClone(value);
+        }
     };
 }
 
-/** The menu item that opens the group settings. */
-export const paletteVisibilityMenuLabel = (locale: string) => japanese(locale) ? 'ブロックグループの表示・非表示の設定' :
-    'Show or hide block groups';
+/** The label of the ▼ button when it opens the block palette editor. */
+export const blockPaletteEditorLabel = (locale: string) => japanese(locale) ? 'ブロックパレットエディタを開く' :
+    'Open the block palette editor';
 
 export interface PaletteMenuItem {
     label: string;
@@ -648,19 +665,20 @@ const menuButtonLabel = (locale: string) => japanese(locale) ? 'パレットの�
 /**
  * Adds a ▼ button at the end of the palette's category menu: after the categories, so it sits at the
  * right end of a horizontal palette and at the bottom of a vertical one. Pressing it lists the items
- * the host gives — the group settings and the host's extension items — and runs the one chosen.
+ * the host gives and runs the one chosen; with `onPress`, pressing it runs that instead, such as opening the
+ * block palette editor.
  */
 export function attachPaletteMenuButton(menu: HTMLElement, getLocale: () => string,
-    getItems: (locale: string) => readonly PaletteMenuItem[]) {
+    getItems: (locale: string) => readonly PaletteMenuItem[], onPress?: () => void) {
     const doc = menu.ownerDocument;
     const button = doc.createElement('button');
     button.type = 'button';
     button.className = 'tw-palette-menu-button';
     button.textContent = '▼';
-    button.setAttribute('aria-haspopup', 'menu');
-    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-haspopup', onPress ? 'dialog' : 'menu');
+    if (!onPress) button.setAttribute('aria-expanded', 'false');
     const label = () => {
-        const text = menuButtonLabel(getLocale());
+        const text = onPress ? blockPaletteEditorLabel(getLocale()) : menuButtonLabel(getLocale());
         button.setAttribute('aria-label', text);
         button.title = text;
     };
@@ -733,7 +751,8 @@ export function attachPaletteMenuButton(menu: HTMLElement, getLocale: () => stri
     button.addEventListener('pointerdown', press);
     button.addEventListener('click', event => {
         event.stopPropagation();
-        if (popup) closeMenu();
+        if (onPress) onPress();
+        else if (popup) closeMenu();
         else openMenu();
     });
     menu.append(button);

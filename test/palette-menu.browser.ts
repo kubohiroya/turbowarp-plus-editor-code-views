@@ -29,7 +29,7 @@ const showWorkspace = (page: Page, visible: boolean) => page.evaluate(visible =>
 }, visible);
 const expectOneRow = async (page: Page) => {
     const toolbox = page.locator('[data-horizontal-block-palette]');
-    const button = toolbox.getByRole('button', {name: 'Palette menu'});
+    const button = toolbox.getByRole('button', {name: 'Open the block palette editor'});
     await expect(toolbox).toHaveCSS('display', 'flex');
     const palette = (await toolbox.boundingBox())!;
     const control = (await button.boundingBox())!;
@@ -37,9 +37,10 @@ const expectOneRow = async (page: Page) => {
     assert.ok(control.x >= palette.x && control.x + control.width <= palette.x + palette.width + 1);
     assert.ok(palette.height < 65, 'the palette occupies one row');
     await button.click();
-    await expect(page.getByRole('menu')).toBeVisible();
+    const editor = page.locator('dialog.tw-block-palette-editor-dialog');
+    await expect(editor).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(button).toBeFocused();
+    await expect(editor).toHaveCount(0);
     return palette.height;
 };
 
@@ -96,7 +97,7 @@ test('disposing the workspace removes its visibility wrapper', async () => {
 test('a host can hide the palette menu while categories and layout switching still work', async () => {
     const {page, errors} = await open(false, false);
     const toolbox = page.locator('.blocklyToolboxDiv');
-    const button = page.getByRole('button', {name: 'Palette menu'});
+    const button = page.getByRole('button', {name: 'Open the block palette editor'});
     await expect(toolbox).toBeVisible();
     await expect(button).toHaveCount(0);
     await page.evaluate(() => (globalThis as any).palette.setHorizontal(true));

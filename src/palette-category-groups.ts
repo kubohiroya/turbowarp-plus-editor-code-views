@@ -113,6 +113,16 @@ export const filterGroupedToolboxTree = (tree: Element, groups: PaletteGroups, f
     return remaining;
 };
 
+export interface PrepareToolboxOptions {
+    catalog?: PaletteGroupCatalog;
+    visible?: ReadonlySet<string> | null;
+    /**
+     * Rearranges the tree once each extension that declares groups is nested, before the nested categories are
+     * flattened, such as into a palette layout (see `./palette-layout`).
+     */
+    arrange?(tree: Element): void;
+}
+
 /** Whether the toolbox tree nests categories, which Scratch Blocks drops unless the tree is prepared first. */
 export const hasCategoryGroups = (tree: Element | null | undefined): boolean => !!tree?.querySelector?.('category category');
 
@@ -122,8 +132,9 @@ export const hasCategoryGroups = (tree: Element | null | undefined): boolean => 
  * Pass the groups returned to the controller's `update` once the palette is drawn.
  */
 export const prepareGroupedToolboxTree = (tree: Element,
-    {catalog, visible}: {catalog?: PaletteGroupCatalog; visible?: ReadonlySet<string> | null} = {}): PaletteGroups => {
+    {catalog, visible, arrange}: PrepareToolboxOptions = {}): PaletteGroups => {
     if (catalog) splitExtensionCategories(tree, catalog, {nested: true});
+    arrange?.(tree);
     const groups = flattenCategoryGroups(tree);
     return visible ? filterGroupedToolboxTree(tree, groups, filtered => filterToolboxTree(filtered, visible)) : groups;
 };
@@ -172,7 +183,7 @@ export interface PaletteCategoryGroupsController {
      * Prepares a toolbox tree as {@link prepareGroupedToolboxTree} does, and puts each group's members in the order
      * they were dragged into, so the palette is drawn in that order. Pass the groups returned to `update`.
      */
-    prepare(tree: Element, options?: {catalog?: PaletteGroupCatalog; visible?: ReadonlySet<string> | null}): PaletteGroups;
+    prepare(tree: Element, options?: PrepareToolboxOptions): PaletteGroups;
     /** Takes the groups of the toolbox just drawn: hides their members' icons and marks the groups' icons. */
     update(groups: PaletteGroups): void;
     /** The groups the palette was last drawn with, members in their order, to show another palette the same way. */

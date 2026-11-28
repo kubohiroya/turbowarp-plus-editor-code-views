@@ -55,6 +55,12 @@
       "@kubohiroya/turbowarp-plus-editor-code-views/palette-category-visibility": [
         "./src/palette-category-visibility.ts"
       ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/palette-layout": [
+        "./src/palette-layout.ts"
+      ],
+      "@kubohiroya/turbowarp-plus-editor-code-views/block-palette-editor": [
+        "./src/block-palette-editor.tsx"
+      ],
       "@kubohiroya/turbowarp-plus-editor-code-views/palette-visibility-dialog": [
         "./src/palette-visibility-dialog.tsx"
       ],
